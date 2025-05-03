@@ -73,6 +73,8 @@ export default function Dashboard() {
       return;
     }
 
+
+    
     try {
       const school = await addSchool(newSchool);
       setSchools(prev => [school, ...prev]);
