@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Icon Generator for Daksh PWA</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    canvas {
+      border: 1px solid #ddd;
+      margin: 10px;
+    }
+    .instructions {
+      background-color: #f8f9fa;
+      padding: 15px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .actions {
+      margin-bottom: 20px;
+    }
+    button {
+      background-color: #4F46E5;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .icon-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .icon-item {
+      margin: 10px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Daksh PWA Icon Generator</h1>
+
+  <div class="instructions">
+    <p>This tool generates placeholder icons for the Daksh PWA. In a production environment, you should replace these with professionally designed icons.</p>
+    <p>Click the button below to generate the icons, then right-click each icon and select "Save Image As..." to save it to your project's public/icons directory.</p>
+  </div>
+
+  <div class="actions">
+    <button id="generateBtn">Generate Icons</button>
+  </div>
+
+  <div id="iconContainer" class="icon-container"></div>
+
+  <script>
+    document.getElementById('generateBtn').addEventListener('click', generateIcons);
+
+    function generateIcons() {
+      const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+      const container = document.getElementById('iconContainer');
+      container.innerHTML = '';
+
+      // Add Apple Touch Icon
+      createIcon(180, 'apple-touch-icon.png', true);
+      createIcon(180, 'apple-touch-icon-precomposed.png', true);
+
+      // Add maskable icon
+      createIcon(192, 'maskable_icon.png', true, true);
+
+      // Add regular icons
+      sizes.forEach(size => {
+        createIcon(size, `icon-${size}x${size}.png`);
+      });
+    }
+
+    function createIcon(size, filename, isApple = false, isMaskable = false) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+
+      // Background
+      ctx.fillStyle = '#4F46E5';
+
+      if (isMaskable) {
+        // For maskable icons, fill the entire canvas
+        ctx.fillRect(0, 0, size, size);
+      } else {
+        // For regular icons, make a rounded rectangle
+        const radius = size * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(size, radius);
+        ctx.arcTo(size, 0, size - radius, 0, radius);
+        ctx.lineTo(radius, 0);
+        ctx.arcTo(0, 0, 0, radius, radius);
+        ctx.lineTo(0, size - radius);
+        ctx.arcTo(0, size, radius, size, radius);
+        ctx.lineTo(size - radius, size);
+        ctx.arcTo(size, size, size, size - radius, radius);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Letter "D" in the center
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = `bold ${size * 0.5}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('D', size / 2, size / 2);
+
+      // Apply specific styles for Apple icons
+      if (isApple) {
+        // Add a subtle inner shadow
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.2)';
+        ctx.shadowBlur = size * 0.05;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = size * 0.02;
+      }
+
+      // Create icon item container
+      const iconItem = document.createElement('div');
+      iconItem.className = 'icon-item';
+
+      // Add canvas to page
+      iconItem.appendChild(canvas);
+
+      // Add filename label
+      const label = document.createElement('p');
+      label.textContent = `${filename} (${size}x${size})`;
+      iconItem.appendChild(label);
+
+      // Add download link
+      const downloadLink = document.createElement('a');
+      downloadLink.href = canvas.toDataURL('image/png');
+      downloadLink.download = filename;
+      downloadLink.textContent = 'Download';
+      downloadLink.style.display = 'block';
+      downloadLink.style.marginTop = '5px';
+      iconItem.appendChild(downloadLink);
+
+      document.getElementById('iconContainer').appendChild(iconItem);
+    }
+  </script>
+</body>
+</html>

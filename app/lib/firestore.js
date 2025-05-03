@@ -166,3 +166,63 @@ export const updateStudent = async (schoolId, classId, studentId, updatedData) =
   const updatedStudent = await getStudentById(schoolId, classId, studentId);
   return updatedStudent;
 };
+
+// Student Authentication Functions
+
+// Authenticate student by username and password
+export const authenticateStudent = async (username, password) => {
+  try {
+    // We need to search through all schools and classes to find the student
+    const schoolsSnapshot = await getDocs(schoolsCollection);
+
+    for (const schoolDoc of schoolsSnapshot.docs) {
+      const schoolId = schoolDoc.id;
+      const classesCollection = collection(db, 'schools', schoolId, 'classes');
+      const classesSnapshot = await getDocs(classesCollection);
+
+      for (const classDoc of classesSnapshot.docs) {
+        const classId = classDoc.id;
+        const studentsCollection = collection(db, 'schools', schoolId, 'classes', classId, 'students');
+
+        // Query for student with matching username
+        const q = query(studentsCollection, where('username', '==', username));
+        const studentSnapshot = await getDocs(q);
+
+        if (!studentSnapshot.empty) {
+          const studentDoc = studentSnapshot.docs[0];
+          const studentData = { id: studentDoc.id, ...studentDoc.data() };
+
+          // Check if password matches (in a real app, you'd compare hashed passwords)
+          if (studentData.password === password) {
+            return {
+              authenticated: true,
+              student: {
+                ...studentData,
+                schoolId,
+                classId
+              }
+            };
+          }
+        }
+      }
+    }
+
+    // No matching student found
+    return { authenticated: false };
+  } catch (error) {
+    console.error('Authentication error:', error);
+    throw error;
+  }
+};
+
+// Authenticate student by QR code data
+export const authenticateStudentByQR = async (qrData) => {
+  try {
+    // QR data should contain username and password
+    const { username, password } = JSON.parse(qrData);
+    return await authenticateStudent(username, password);
+  } catch (error) {
+    console.error('QR authentication error:', error);
+    throw error;
+  }
+};
