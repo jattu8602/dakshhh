@@ -95,7 +95,7 @@ export default function Home() {
             </button>
           </div>
         </form>
-      </div>
+    </div>
     </main>
   );
 }

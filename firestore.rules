@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function isSuperAdmin() {
+      return request.auth != null &&
+             request.auth.token.email == 'chaurasiyajatin68@gmail.com';
+    }
+
+    function isStudent() {
+      return request.auth != null &&
+             exists(/databases/$(database)/documents/schools/$(request.auth.token.schoolId)/classes/$(request.auth.token.classId)/students/$(request.auth.uid));
+    }
+
+    function isValidStudentLogin(username, password) {
+      let studentData = get(/databases/$(database)/documents/schools/$(request.auth.token.schoolId)/classes/$(request.auth.token.classId)/students/$(request.auth.uid)).data;
+      return studentData.username == username && studentData.password == password;
+    }
+
+    // Allow super admin full access to all collections
+    match /{document=**} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // Student access
+    match /schools/{schoolId} {
+      allow read: if isStudent() && schoolId == request.auth.token.schoolId;
+
+      match /classes/{classId} {
+        allow read: if isStudent() && schoolId == request.auth.token.schoolId && classId == request.auth.token.classId;
+
+        match /students/{studentId} {
+          allow read: if isStudent() && request.auth.uid == studentId;
+        }
+      }
+    }
+  }
+}
