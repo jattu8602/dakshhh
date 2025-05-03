@@ -6,7 +6,7 @@ import Image from 'next/image';
 import { useStudent } from '../../lib/studentContext';
 import { setCookie } from 'cookies-next';
 import { Html5Qrcode } from 'html5-qrcode';
-import toast, { Toaster } from 'react-hot-toast';
+import toast from 'react-hot-toast';
 
 export default function StudentLogin() {
   const router = useRouter();
@@ -18,19 +18,35 @@ export default function StudentLogin() {
   const [loading, setLoading] = useState(false);
   const [scannerReady, setScannerReady] = useState(false);
   const [scanActive, setScanActive] = useState(false);
+  const [isNavigating, setIsNavigating] = useState(false);
   const scannerRef = useRef(null);
   const qrContainerRef = useRef(null);
 
   // Set error from auth context
   useEffect(() => {
-    if (authError) {
+    if (authError && !isNavigating) {
       setError(authError);
       toast.error(authError);
     }
-  }, [authError]);
+  }, [authError, isNavigating]);
+
+  // Clean up the scanner when component unmounts
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        try {
+          scannerRef.current.stop();
+        } catch (err) {
+          console.error('Error stopping scanner on unmount:', err);
+        }
+      }
+    };
+  }, []);
 
   // Toggle login method
   const toggleLoginMethod = () => {
+    if (isNavigating) return;
+
     setLoginMethod(loginMethod === 'credentials' ? 'qr' : 'credentials');
     setError('');
 
@@ -41,25 +57,37 @@ export default function StudentLogin() {
 
   // Initialize QR scanner when QR method is selected
   useEffect(() => {
+    if (isNavigating) return;
+
     if (loginMethod === 'qr' && !scannerReady && qrContainerRef.current) {
       // Small delay to ensure DOM is ready
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         initializeScanner();
       }, 100);
+
+      return () => clearTimeout(timer);
     }
 
     return () => {
-      if (scannerRef.current) {
+      if (scannerRef.current && scanActive) {
         stopScanner();
       }
     };
-  }, [loginMethod, qrContainerRef.current]);
+  }, [loginMethod, qrContainerRef.current, isNavigating, scanActive]);
 
   // Initialize the QR scanner
   const initializeScanner = async () => {
+    if (isNavigating) return;
+
     try {
       if (scannerRef.current) {
         await stopScanner();
+      }
+
+      // Check if element exists before initializing
+      if (!document.getElementById("qr-reader")) {
+        console.error("QR reader element not found");
+        return;
       }
 
       const html5QrCode = new Html5Qrcode("qr-reader");
@@ -68,17 +96,22 @@ export default function StudentLogin() {
       setScannerReady(true);
       startScanner();
 
-      toast.success('Camera initialized. Point it at a QR code.');
+      // Show toast only if not already navigating
+      if (!isNavigating) {
+        toast.success('Camera initialized. Point it at a QR code.');
+      }
     } catch (err) {
       console.error('Failed to initialize scanner:', err);
-      toast.error('Could not access camera. Please check permissions.');
-      setError('Could not access camera. Please check permissions.');
+      if (!isNavigating) {
+        toast.error('Could not access camera. Please check permissions.');
+        setError('Could not access camera. Please check permissions.');
+      }
     }
   };
 
   // Start QR scanning
   const startScanner = () => {
-    if (!scannerRef.current) return;
+    if (!scannerRef.current || isNavigating) return;
 
     const qrConfig = {
       fps: 10,
@@ -97,30 +130,44 @@ export default function StudentLogin() {
     })
     .catch((err) => {
       console.error('Scanner start error:', err);
-      toast.error('Failed to start camera');
-      setError('Failed to start camera');
+      if (!isNavigating) {
+        toast.error('Failed to start camera');
+        setError('Failed to start camera');
+      }
     });
   };
 
-  // Stop QR scanning
+  // Stop QR scanning - returns a promise
   const stopScanner = async () => {
     if (scannerRef.current && scanActive) {
       try {
         await scannerRef.current.stop();
         setScanActive(false);
+        return true;
       } catch (err) {
         console.error('Error stopping scanner:', err);
+        return false;
       }
     }
+    return true;
   };
 
   // Handle successful QR scan
   const onScanSuccess = async (decodedText) => {
+    if (isNavigating) return;
+
     try {
+      // Set navigating first to prevent multiple scans and toasts
+      setIsNavigating(true);
+
       // Stop scanning immediately to prevent multiple scans
       await stopScanner();
 
-      toast.success('QR code detected!');
+      // Only show toast if not navigating
+      if (!isNavigating) {
+        toast.success('QR code detected!');
+      }
+
       setLoading(true);
 
       // Try to parse the QR data and login
@@ -130,8 +177,12 @@ export default function StudentLogin() {
       setError('Invalid QR code format');
       toast.error('Invalid QR code format');
       setLoading(false);
-      // Restart scanner after error
-      startScanner();
+      setIsNavigating(false);
+
+      // Restart scanner after error only if we haven't started navigating
+      if (!isNavigating) {
+        startScanner();
+      }
     }
   };
 
@@ -150,6 +201,10 @@ export default function StudentLogin() {
       const result = await loginWithQR(qrData);
 
       if (result.success) {
+        // Keep the navigating flag set to prevent additional toasts
+        setIsNavigating(true);
+
+        // Show success toast only once
         toast.success('Login successful!');
 
         // Store a flag to indicate login is complete but onboarding isn't
@@ -162,20 +217,31 @@ export default function StudentLogin() {
           path: '/'
         });
 
-        // Redirect to questions page after successful login
-        router.push('/onboarding/questions');
+        // Small delay to ensure the scanner is fully stopped before navigation
+        setTimeout(() => {
+          // Redirect to questions page after successful login
+          router.push('/onboarding/questions');
+        }, 500);
       } else {
         setError(result.error || 'QR authentication failed');
         toast.error(result.error || 'QR authentication failed');
+        setIsNavigating(false);
+
         // Restart scanner after error
-        startScanner();
+        if (!isNavigating) {
+          startScanner();
+        }
       }
     } catch (err) {
       console.error('QR login error:', err);
       setError('Failed to authenticate with QR code');
       toast.error('Failed to authenticate with QR code');
+      setIsNavigating(false);
+
       // Restart scanner after error
-      startScanner();
+      if (!isNavigating) {
+        startScanner();
+      }
     } finally {
       setLoading(false);
     }
@@ -184,6 +250,8 @@ export default function StudentLogin() {
   // Handle login with credentials
   const handleCredentialLogin = async (e) => {
     e.preventDefault();
+
+    if (isNavigating) return;
 
     if (!username || !password) {
       setError('Please enter both username and password');
@@ -199,6 +267,9 @@ export default function StudentLogin() {
       const result = await login(username, password);
 
       if (result.success) {
+        // Set navigating flag to prevent additional toasts
+        setIsNavigating(true);
+
         toast.success('Login successful!');
 
         // Store a flag to indicate login is complete but onboarding isn't
@@ -211,8 +282,11 @@ export default function StudentLogin() {
           path: '/'
         });
 
-        // Redirect to questions page after successful login
-        router.push('/onboarding/questions');
+        // Small delay before navigation to ensure toast is shown
+        setTimeout(() => {
+          // Redirect to questions page after successful login
+          router.push('/onboarding/questions');
+        }, 500);
       } else {
         setError(result.error || 'Authentication failed');
         toast.error(result.error || 'Authentication failed');
@@ -228,33 +302,7 @@ export default function StudentLogin() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Toast container */}
-      <Toaster
-        position="top-center"
-        toastOptions={{
-          duration: 3000,
-          style: {
-            background: '#4F46E5',
-            color: '#fff',
-            borderRadius: '8px',
-          },
-          success: {
-            iconTheme: {
-              primary: '#FFFFFF',
-              secondary: '#4F46E5',
-            },
-          },
-          error: {
-            style: {
-              background: '#EF4444',
-            },
-            iconTheme: {
-              primary: '#FFFFFF',
-              secondary: '#EF4444',
-            },
-          },
-        }}
-      />
+      {/* Removed duplicate Toaster component - using the global one from ClientLayout */}
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-md space-y-8">
@@ -275,23 +323,25 @@ export default function StudentLogin() {
           <div className="flex rounded-md shadow-sm">
             <button
               type="button"
-              onClick={() => setLoginMethod('credentials')}
+              onClick={() => toggleLoginMethod()}
+              disabled={isNavigating || loading}
               className={`w-1/2 py-2 px-4 text-sm font-medium rounded-l-md ${
                 loginMethod === 'credentials'
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white text-gray-700 border border-gray-300'
-              }`}
+              } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               Username & Password
             </button>
             <button
               type="button"
-              onClick={() => setLoginMethod('qr')}
+              onClick={() => toggleLoginMethod()}
+              disabled={isNavigating || loading}
               className={`w-1/2 py-2 px-4 text-sm font-medium rounded-r-md ${
                 loginMethod === 'qr'
                   ? 'bg-indigo-600 text-white'
                   : 'bg-white text-gray-700 border border-gray-300'
-              }`}
+              } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               Scan QR Code
             </button>
@@ -320,6 +370,7 @@ export default function StudentLogin() {
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
+                    disabled={isNavigating || loading}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
@@ -335,6 +386,7 @@ export default function StudentLogin() {
                     required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
+                    disabled={isNavigating || loading}
                     className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
                   />
                 </div>
@@ -343,7 +395,7 @@ export default function StudentLogin() {
               <div>
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={loading || isNavigating}
                   className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
                 >
                   {loading ? (
