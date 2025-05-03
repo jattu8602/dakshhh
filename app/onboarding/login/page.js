@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useStudent } from '../../lib/studentContext';
 import { setCookie } from 'cookies-next';
-// Instead of using the external package, we'll create a mock implementation
-// import { QrReader } from 'react-qr-reader';
+import { Html5Qrcode } from 'html5-qrcode';
+import toast, { Toaster } from 'react-hot-toast';
 
 export default function StudentLogin() {
   const router = useRouter();
@@ -16,11 +16,16 @@ export default function StudentLogin() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [scannerReady, setScannerReady] = useState(false);
+  const [scanActive, setScanActive] = useState(false);
+  const scannerRef = useRef(null);
+  const qrContainerRef = useRef(null);
 
   // Set error from auth context
   useEffect(() => {
     if (authError) {
       setError(authError);
+      toast.error(authError);
     }
   }, [authError]);
 
@@ -28,6 +33,152 @@ export default function StudentLogin() {
   const toggleLoginMethod = () => {
     setLoginMethod(loginMethod === 'credentials' ? 'qr' : 'credentials');
     setError('');
+
+    if (scanActive) {
+      stopScanner();
+    }
+  };
+
+  // Initialize QR scanner when QR method is selected
+  useEffect(() => {
+    if (loginMethod === 'qr' && !scannerReady && qrContainerRef.current) {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
+        initializeScanner();
+      }, 100);
+    }
+
+    return () => {
+      if (scannerRef.current) {
+        stopScanner();
+      }
+    };
+  }, [loginMethod, qrContainerRef.current]);
+
+  // Initialize the QR scanner
+  const initializeScanner = async () => {
+    try {
+      if (scannerRef.current) {
+        await stopScanner();
+      }
+
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      scannerRef.current = html5QrCode;
+
+      setScannerReady(true);
+      startScanner();
+
+      toast.success('Camera initialized. Point it at a QR code.');
+    } catch (err) {
+      console.error('Failed to initialize scanner:', err);
+      toast.error('Could not access camera. Please check permissions.');
+      setError('Could not access camera. Please check permissions.');
+    }
+  };
+
+  // Start QR scanning
+  const startScanner = () => {
+    if (!scannerRef.current) return;
+
+    const qrConfig = {
+      fps: 10,
+      qrbox: { width: 250, height: 250 },
+      aspectRatio: 1.0
+    };
+
+    scannerRef.current.start(
+      { facingMode: "environment" },
+      qrConfig,
+      onScanSuccess,
+      onScanError
+    )
+    .then(() => {
+      setScanActive(true);
+    })
+    .catch((err) => {
+      console.error('Scanner start error:', err);
+      toast.error('Failed to start camera');
+      setError('Failed to start camera');
+    });
+  };
+
+  // Stop QR scanning
+  const stopScanner = async () => {
+    if (scannerRef.current && scanActive) {
+      try {
+        await scannerRef.current.stop();
+        setScanActive(false);
+      } catch (err) {
+        console.error('Error stopping scanner:', err);
+      }
+    }
+  };
+
+  // Handle successful QR scan
+  const onScanSuccess = async (decodedText) => {
+    try {
+      // Stop scanning immediately to prevent multiple scans
+      await stopScanner();
+
+      toast.success('QR code detected!');
+      setLoading(true);
+
+      // Try to parse the QR data and login
+      await handleQRLogin(decodedText);
+    } catch (err) {
+      console.error('QR processing error:', err);
+      setError('Invalid QR code format');
+      toast.error('Invalid QR code format');
+      setLoading(false);
+      // Restart scanner after error
+      startScanner();
+    }
+  };
+
+  // Handle QR scan error
+  const onScanError = (err) => {
+    // This fires for every frame without a QR code, so we don't want to show errors
+    // Only log serious errors related to camera
+    if (err?.name !== 'NotFoundException') {
+      console.error('QR scan error:', err);
+    }
+  };
+
+  // Process QR data and login
+  const handleQRLogin = async (qrData) => {
+    try {
+      const result = await loginWithQR(qrData);
+
+      if (result.success) {
+        toast.success('Login successful!');
+
+        // Store a flag to indicate login is complete but onboarding isn't
+        localStorage.setItem('loginCompleted', 'true');
+        localStorage.setItem('onboardingStep', 'questions');
+
+        // Set cookie for middleware - explicitly set to false until questions are completed
+        setCookie('onboarded', 'false', {
+          maxAge: 30 * 24 * 60 * 60, // 30 days
+          path: '/'
+        });
+
+        // Redirect to questions page after successful login
+        router.push('/onboarding/questions');
+      } else {
+        setError(result.error || 'QR authentication failed');
+        toast.error(result.error || 'QR authentication failed');
+        // Restart scanner after error
+        startScanner();
+      }
+    } catch (err) {
+      console.error('QR login error:', err);
+      setError('Failed to authenticate with QR code');
+      toast.error('Failed to authenticate with QR code');
+      // Restart scanner after error
+      startScanner();
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Handle login with credentials
@@ -36,6 +187,7 @@ export default function StudentLogin() {
 
     if (!username || !password) {
       setError('Please enter both username and password');
+      toast.error('Please enter both username and password');
       return;
     }
 
@@ -47,6 +199,8 @@ export default function StudentLogin() {
       const result = await login(username, password);
 
       if (result.success) {
+        toast.success('Login successful!');
+
         // Store a flag to indicate login is complete but onboarding isn't
         localStorage.setItem('loginCompleted', 'true');
         localStorage.setItem('onboardingStep', 'questions');
@@ -61,62 +215,47 @@ export default function StudentLogin() {
         router.push('/onboarding/questions');
       } else {
         setError(result.error || 'Authentication failed');
+        toast.error(result.error || 'Authentication failed');
       }
     } catch (err) {
       console.error('Login error:', err);
       setError('Invalid username or password. Please try again.');
+      toast.error('Invalid username or password. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // For demo purposes - simulate QR scan after 3 seconds
-  useEffect(() => {
-    if (loginMethod === 'qr') {
-      const timer = setTimeout(() => {
-        // Simulate successful QR scan with mock QR data
-        const mockQrData = JSON.stringify({
-          username: 'student123',
-          password: 'password123'
-        });
-
-        setLoading(true);
-
-        // Attempt to authenticate with QR data
-        loginWithQR(mockQrData)
-          .then(result => {
-            if (result.success) {
-              // Store a flag to indicate login is complete but onboarding isn't
-              localStorage.setItem('loginCompleted', 'true');
-              localStorage.setItem('onboardingStep', 'questions');
-
-              // Set cookie for middleware - explicitly set to false until questions are completed
-              setCookie('onboarded', 'false', {
-                maxAge: 30 * 24 * 60 * 60, // 30 days
-                path: '/'
-              });
-
-              // Redirect to questions page for final step in onboarding flow
-              router.push('/onboarding/questions');
-            } else {
-              setError(result.error || 'QR authentication failed');
-            }
-          })
-          .catch(err => {
-            console.error('QR login error:', err);
-            setError('Failed to authenticate with QR code');
-          })
-          .finally(() => {
-            setLoading(false);
-          });
-      }, 3000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [loginMethod, router, loginWithQR]);
-
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Toast container */}
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            background: '#4F46E5',
+            color: '#fff',
+            borderRadius: '8px',
+          },
+          success: {
+            iconTheme: {
+              primary: '#FFFFFF',
+              secondary: '#4F46E5',
+            },
+          },
+          error: {
+            style: {
+              background: '#EF4444',
+            },
+            iconTheme: {
+              primary: '#FFFFFF',
+              secondary: '#EF4444',
+            },
+          },
+        }}
+      />
+
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-md space-y-8">
           {/* Logo or header image */}
@@ -218,32 +357,33 @@ export default function StudentLogin() {
             </form>
           )}
 
-          {/* QR Code Scanner (Mock) */}
+          {/* QR Code Scanner */}
           {loginMethod === 'qr' && (
-            <div className="mt-8">
+            <div className="mt-8" ref={qrContainerRef}>
               <div className="mb-4 text-center text-sm text-gray-500">
                 Scan the QR code provided by your teacher
               </div>
               <div className="overflow-hidden rounded-lg bg-gray-100 aspect-square relative">
-                {/* Mock camera view */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-full h-full bg-gray-900 opacity-10"></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {loading ? (
-                      <svg className="animate-spin h-10 w-10 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                    ) : (
-                      <div className="flex flex-col items-center">
-                        <svg className="h-10 w-10 text-indigo-600 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                        </svg>
-                        <p className="text-sm text-gray-700">Scanning for QR code...</p>
-                      </div>
-                    )}
+                {loading ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70">
+                    <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div id="qr-reader" className="w-full h-full"></div>
+                    <div className="absolute inset-0 pointer-events-none">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="w-64 h-64 border-2 border-white rounded-lg"></div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+              <div className="mt-4 text-xs text-center text-gray-500">
+                Make sure the QR code is within the scanning area and well-lit
               </div>
             </div>
           )}
