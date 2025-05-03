@@ -2,8 +2,12 @@ import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 
 // Get environment variables for super admin authentication
-const adminEmail = process.env.ADMIN_EMAIL || 'chaurasiyajatin68@gmail.com';
-const adminPassword = process.env.ADMIN_PASSWORD || 'jattu@8602';
+const adminEmail = process.env.ADMIN_EMAIL;
+const adminPassword = process.env.ADMIN_PASSWORD;
+
+if (!adminEmail || !adminPassword) {
+  throw new Error('Missing required environment variables: ADMIN_EMAIL and ADMIN_PASSWORD');
+}
 
 const handler = NextAuth({
   providers: [
