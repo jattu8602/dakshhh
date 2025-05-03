@@ -5,6 +5,20 @@
   --foreground: #171717;
 }
 
+h1,h2,h3,h4,h5,h6 {
+
+  @apply text-gray-900;
+}
+
+p {
+  @apply text-gray-600;
+}
+input {
+  @apply text-gray-900;
+}
+
+
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
