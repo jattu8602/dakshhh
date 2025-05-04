@@ -23,6 +23,53 @@ export default function StudentLogin() {
   const qrContainerRef = useRef(null);
   const redirectTimeoutRef = useRef(null);
 
+  // Fix any stuck redirects on page load
+  useEffect(() => {
+    // If we loaded the login page but we're supposed to be logged in
+    const onboarded = localStorage.getItem('onboarded') === 'true';
+    const loginCompleted = localStorage.getItem('loginCompleted') === 'true';
+
+    // Check document cookies too
+    const hasCookieOnboarded = document.cookie.includes('onboarded=true');
+    const hasCookieLogin = document.cookie.includes('loginCompleted=true');
+
+    // Check if we have student data in localStorage
+    let storedStudent = null;
+    try {
+      const studentStr = localStorage.getItem('student');
+      if (studentStr) {
+        storedStudent = JSON.parse(studentStr);
+      }
+    } catch (e) {
+      console.error('Failed to parse stored student data', e);
+    }
+
+    // If localStorage indicates logged in, but we're still at login page
+    if ((onboarded || loginCompleted || hasCookieOnboarded || hasCookieLogin) &&
+        window.location.pathname.includes('/onboarding/login')) {
+      console.log('Detected logged-in state but still on login page, forcing redirect');
+
+      // Force the cookies again
+      document.cookie = `onboarded=${onboarded ? 'true' : 'false'};path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+      document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+
+      // Redirect based on onboarding status and student data
+      if (onboarded && storedStudent && storedStudent.schoolId && storedStudent.classId && storedStudent.id) {
+        // If we have full student data, redirect to personalized dashboard URL
+        window.location.href = `/daksh/${storedStudent.schoolId}/${storedStudent.classId}/${storedStudent.id}?forcedRedirect=true&t=${Date.now()}`;
+      } else if (onboarded) {
+        // Otherwise fall back to generic dashboard
+        window.location.href = `/daksh?forcedRedirect=true&t=${Date.now()}`;
+      } else if (loginCompleted && storedStudent && storedStudent.schoolId && storedStudent.classId && storedStudent.id) {
+        // If login completed but not onboarded, go to personalized questions
+        window.location.href = `/onboarding/questions/${storedStudent.schoolId}/${storedStudent.classId}/${storedStudent.id}?forcedRedirect=true&t=${Date.now()}`;
+      } else if (loginCompleted) {
+        // Fall back to generic questions
+        window.location.href = `/onboarding/questions?forcedRedirect=true&t=${Date.now()}`;
+      }
+    }
+  }, []);
+
   // Clean up any previous login state when component mounts
   useEffect(() => {
     // Clear any previous navigation attempts
@@ -74,79 +121,192 @@ export default function StudentLogin() {
     };
   }, [scanActive]);
 
-  // Handle redirect based on user's onboarding status
+  // Detect redirect loops on page load
+  useEffect(() => {
+    const redirectFrom = sessionStorage.getItem('redirectFrom');
+    const redirectTime = parseInt(sessionStorage.getItem('redirectTime') || '0', 10);
+    const currentTime = Date.now();
+
+    // If we were redirected from login within the last 3 seconds, but ended up back here,
+    // it might be a redirect loop
+    if (redirectFrom === 'login' && (currentTime - redirectTime < 3000)) {
+      console.warn('Possible redirect loop detected - clearing redirect markers');
+      // Clear redirect markers
+      sessionStorage.removeItem('redirectFrom');
+      sessionStorage.removeItem('redirectTime');
+
+      // Show a warning to the user
+      toast.error('There was an issue with redirection. Please try again.');
+    } else {
+      // Normal page load - clear any old redirect markers
+      sessionStorage.removeItem('redirectFrom');
+      sessionStorage.removeItem('redirectTime');
+    }
+  }, []);
+
+  // Handle successful login based on user's onboarding status
   const handleSuccessfulLogin = (student) => {
+    console.log('Login successful, handling redirection for student:', student.id);
     setIsNavigating(true);
     setLoading(true);
 
     // Check if the student has already completed onboarding questions
     const hasCompletedOnboarding = student && student.preferences;
+    console.log('Has completed onboarding:', hasCompletedOnboarding);
+    console.log('Student data includes schoolId:', !!student.schoolId, 'classId:', !!student.classId, 'studentId:', !!student.id);
 
     // Clear any existing timeout first
     if (redirectTimeoutRef.current) {
       clearTimeout(redirectTimeoutRef.current);
     }
 
-    if (hasCompletedOnboarding) {
-      // User has already completed questions, mark as onboarded
-      localStorage.setItem('onboarded', 'true');
-      // Set cookie with HTTP only false to ensure it's accessible to middleware
-      setCookie('onboarded', 'true', {
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/',
-        sameSite: 'strict',
-        httpOnly: false
+    try {
+      // Force clean all cookies first to avoid any conflict issues
+      document.cookie.split(';').forEach(c => {
+        const cookieName = c.trim().split('=')[0];
+        if (cookieName.includes('onboarded') || cookieName.includes('loginCompleted')) {
+          document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+        }
       });
 
-      // Set loginCompleted cookie as well for redundancy
-      setCookie('loginCompleted', 'true', {
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/',
-        sameSite: 'strict',
-        httpOnly: false
-      });
+      // Create a personalized dashboard URL for the student
+      const dashboardBaseUrl = hasCompletedOnboarding ? '/daksh' : '/onboarding/questions';
 
-      toast.success('Welcome back!', { duration: 1500 });
+      // Construct a personalized URL that includes the student's school, class, and ID
+      let personalizedUrl = dashboardBaseUrl;
+      let redirectUrl = dashboardBaseUrl;
 
-      // Force synchronous cookie setting before redirect
-      document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
+      // Only create personalized URL if we have all required IDs
+      if (student && student.schoolId && student.classId && student.id) {
+        console.log('Building personalized URL with IDs:', student.schoolId, student.classId, student.id);
+        personalizedUrl = `${dashboardBaseUrl}/${student.schoolId}/${student.classId}/${student.id}`;
+        redirectUrl = `${personalizedUrl}?t=${Date.now()}`;
+      } else {
+        console.log('Missing required IDs for personalized URL, using generic URL');
+        redirectUrl = `${dashboardBaseUrl}?t=${Date.now()}`;
+      }
 
-      // Small delay to ensure cookies are set
-      setTimeout(() => {
-        // Force hard refresh to ensure middleware catches the new cookies
-        window.location.replace('/daksh');
-      }, 300);
-    } else {
-      // User has not completed onboarding, redirect to questions
-      localStorage.setItem('loginCompleted', 'true');
-      localStorage.setItem('onboardingStep', 'questions');
+      console.log('Target redirect URL:', redirectUrl);
 
-      // Set cookies with HTTP only false to ensure they're accessible to middleware
-      setCookie('onboarded', 'false', {
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/',
-        sameSite: 'strict',
-        httpOnly: false
-      });
+      if (hasCompletedOnboarding) {
+        // FORCE DIRECT NAVIGATION TO DASHBOARD
+        try {
+          // Set all cookies and storage items
+          localStorage.setItem('onboarded', 'true');
+          localStorage.setItem('loginCompleted', 'true');
+          localStorage.setItem('student', JSON.stringify(student));
 
-      setCookie('loginCompleted', 'true', {
-        maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/',
-        sameSite: 'strict',
-        httpOnly: false
-      });
+          // Set cookies with every possible approach - CONSISTENT sameSite=lax for all
+          document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+          document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
 
-      toast.success('Login successful!', { duration: 1500 });
+          // Use the library too for redundancy
+          setCookie('onboarded', 'true', {
+            maxAge: 30 * 24 * 60 * 60,
+            path: '/',
+            sameSite: 'lax',
+            httpOnly: false
+          });
 
-      // Force synchronous cookie setting before redirect
-      document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
-      document.cookie = `onboarded=false;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
+          setCookie('loginCompleted', 'true', {
+            maxAge: 30 * 24 * 60 * 60,
+            path: '/',
+            sameSite: 'lax',
+            httpOnly: false
+          });
 
-      // Small delay to ensure cookies are set
-      setTimeout(() => {
-        // Force hard refresh to ensure middleware catches the new cookies
-        window.location.replace('/onboarding/questions');
-      }, 300);
+          // Verify cookies were set - log warning if not
+          setTimeout(() => {
+            const hasLoginCookie = document.cookie.includes('loginCompleted=true');
+            const hasOnboardedCookie = document.cookie.includes('onboarded=true');
+
+            if (!hasLoginCookie || !hasOnboardedCookie) {
+              console.warn('Cookies not properly set - trying one more time');
+              // Try again with modified domain
+              document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax;secure=false`;
+              document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax;secure=false`;
+            }
+          }, 50);
+
+          console.log('All cookies set, proceeding to direct navigation to:', redirectUrl);
+          toast.success('Login successful! Redirecting...', { duration: 1500 });
+
+          // Add a small delay to ensure cookies are set before redirecting
+          setTimeout(() => {
+            console.log('Executing primary navigation method...');
+            // CRITICAL: Use immediate direct navigation
+            window.location.href = redirectUrl;
+          }, 100);
+
+          // Backup navigation method with delay
+          setTimeout(() => {
+            console.log('Executing backup navigation method...');
+            window.location.replace(redirectUrl);
+          }, 600);
+
+          // Final fallback
+          setTimeout(() => {
+            console.log('Executing final fallback navigation...');
+            window.open(redirectUrl, '_self');
+          }, 1200);
+        } catch (navError) {
+          console.error('Navigation error:', navError);
+          // Ultimate fallback
+          console.log('Executing emergency fallback navigation due to error');
+          window.location.href = redirectUrl;
+        }
+      } else {
+        // Handle unfinished onboarding - redirect to questions
+        localStorage.setItem('loginCompleted', 'true');
+        localStorage.setItem('onboardingStep', 'questions');
+        localStorage.setItem('student', JSON.stringify(student));
+
+        // Force set cookies - CONSISTENT sameSite=lax for all
+        document.cookie = `onboarded=false;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+        document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+
+        setCookie('onboarded', 'false', {
+          maxAge: 30 * 24 * 60 * 60,
+          path: '/',
+          sameSite: 'lax',
+          httpOnly: false
+        });
+
+        setCookie('loginCompleted', 'true', {
+          maxAge: 30 * 24 * 60 * 60,
+          path: '/',
+          sameSite: 'lax',
+          httpOnly: false
+        });
+
+        console.log('Cookies set for onboarding, proceeding to questions page:', redirectUrl);
+        toast.success('Login successful! Completing setup...', { duration: 1500 });
+
+        // Add a small delay to ensure cookies are set before redirecting
+        setTimeout(() => {
+          console.log('Executing primary navigation to questions page...');
+          // Immediate navigation
+          window.location.href = redirectUrl;
+        }, 100);
+
+        // Backup with delay
+        setTimeout(() => {
+          console.log('Executing backup navigation to questions page...');
+          window.location.replace(redirectUrl);
+        }, 600);
+      }
+    } catch (err) {
+      console.error('Critical error during redirect:', err);
+      // Last resort - brute force approach with student info
+      if (student && student.schoolId && student.classId && student.id) {
+        console.log('Using brute force approach with personalized URL');
+        const fallbackUrl = `/daksh/${student.schoolId}/${student.classId}/${student.id}`;
+        window.location.href = fallbackUrl;
+      } else {
+        console.log('Using brute force approach with generic URL');
+        const fallbackUrl = hasCompletedOnboarding ? '/daksh' : '/onboarding/questions';
+        window.location.href = fallbackUrl;
+      }
     }
   };
 
@@ -402,6 +562,17 @@ export default function StudentLogin() {
           toast.success('Multiple accounts found. Please select one.');
         } else {
           // Keep the navigating flag set to prevent additional toasts
+
+          // Force immediate cookie setting to avoid "Please login first" error
+          if (result.student && result.student.preferences) {
+            // Force synchronous cookie setting right away - CONSISTENT sameSite=lax
+            document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+            document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+          } else {
+            document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+            document.cookie = `onboarded=false;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+          }
+
           // Handle successful login with the user's data
           handleSuccessfulLogin(result.student);
         }
@@ -453,6 +624,17 @@ export default function StudentLogin() {
         } else {
           // Set navigating flag to prevent additional toasts and actions
           setIsNavigating(true);
+
+          // Force immediate cookie setting to avoid "Please login first" error
+          if (result.student && result.student.preferences) {
+            // Force synchronous cookie setting right away - CONSISTENT sameSite=lax
+            document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+            document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+          } else {
+            document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+            document.cookie = `onboarded=false;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+          }
+
           // Handle successful login with the user's data
           handleSuccessfulLogin(result.student);
         }

@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { updateStudent } from '../../lib/firestore';
-import { useStudent } from '../../lib/studentContext';
+import { useRouter, useParams } from 'next/navigation';
+import { updateStudent, getStudentById } from '../../../../../lib/firestore';
+import { useStudent } from '../../../../../lib/studentContext';
 import { setCookie } from 'cookies-next';
 import toast from 'react-hot-toast';
 
-export default function Questions() {
+export default function PersonalizedQuestions() {
   const router = useRouter();
-  const { student, isAuthenticated, loading, completeOnboarding, onboardingComplete } = useStudent();
+  const params = useParams();
+  const { student: contextStudent, isAuthenticated, loading, completeOnboarding, onboardingComplete } = useStudent();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({
     discover: '',
@@ -20,48 +21,10 @@ export default function Questions() {
   });
   const [showSubjectsPage, setShowSubjectsPage] = useState(false);
   const [pageLoading, setPageLoading] = useState(true);
-  const searchParams = useSearchParams();
-
-  // Handle navigation and authentication
-  useEffect(() => {
-    if (!loading) {
-      // If already onboarded, redirect to dashboard
-      if (isAuthenticated && onboardingComplete) {
-        toast.success('You have already completed onboarding');
-        const timer = setTimeout(() => {
-          router.push('/daksh');
-        }, 500);
-        return () => clearTimeout(timer);
-      }
-
-      // If not authenticated, redirect to login
-      if (!isAuthenticated) {
-        toast.error('Please log in first');
-        const timer = setTimeout(() => {
-          router.push('/onboarding/login');
-        }, 500);
-        return () => clearTimeout(timer);
-      }
-
-      // User is authenticated but not onboarded, show questions
-      setPageLoading(false);
-
-      // If the user has an existing student object, pre-fill answers from preferences
-      if (student && student.preferences) {
-        setAnswers({
-          ...answers,
-          ...student.preferences
-        });
-      }
-    }
-  }, [isAuthenticated, loading, router, student, onboardingComplete]);
+  const [student, setStudent] = useState(null);
 
   // Add cookie verification code
   useEffect(() => {
-    // Check for navigation parameters
-    const timestamp = searchParams.get('t');
-    const forcedRedirect = searchParams.get('forcedRedirect') === 'true';
-
     // Verify cookies are set correctly for this page
     const hasLoginCookie = document.cookie.includes('loginCompleted=true');
 
@@ -71,15 +34,99 @@ export default function Questions() {
       document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
       localStorage.setItem('loginCompleted', 'true');
     }
+  }, []);
 
-    // Clean URL parameters (optional)
-    if (timestamp || forcedRedirect) {
-      const url = new URL(window.location.href);
-      url.searchParams.delete('t');
-      url.searchParams.delete('forcedRedirect');
-      window.history.replaceState({}, '', url);
+  // Initialize student data from route params
+  useEffect(() => {
+    async function loadStudentData() {
+      if (params.schoolId && params.classId && params.studentId) {
+        try {
+          // First try to use context student if the IDs match
+          if (
+            contextStudent &&
+            contextStudent.schoolId === params.schoolId &&
+            contextStudent.classId === params.classId &&
+            contextStudent.id === params.studentId
+          ) {
+            setStudent(contextStudent);
+
+            // If the student has existing preferences, pre-fill answers
+            if (contextStudent.preferences) {
+              setAnswers({
+                ...answers,
+                ...contextStudent.preferences
+              });
+            }
+
+            setPageLoading(false);
+            return;
+          }
+
+          // Otherwise fetch from Firestore directly
+          const studentData = await getStudentById(
+            params.schoolId,
+            params.classId,
+            params.studentId
+          );
+
+          if (studentData) {
+            const enrichedStudent = {
+              ...studentData,
+              schoolId: params.schoolId,
+              classId: params.classId
+            };
+
+            setStudent(enrichedStudent);
+
+            // If the student has existing preferences, pre-fill answers
+            if (studentData.preferences) {
+              setAnswers({
+                ...answers,
+                ...studentData.preferences
+              });
+            }
+          } else {
+            // If student not found, redirect to login
+            toast.error('Student data not found');
+            router.push('/onboarding/login');
+          }
+        } catch (error) {
+          console.error('Error loading student data:', error);
+          toast.error('Failed to load your profile');
+          router.push('/onboarding/login');
+        } finally {
+          setPageLoading(false);
+        }
+      } else {
+        // Missing parameters, redirect to login
+        router.push('/onboarding/login');
+      }
     }
-  }, [searchParams]);
+
+    if (!loading) {
+      loadStudentData();
+    }
+  }, [params, contextStudent, loading, router]);
+
+  // Handle navigation and authentication
+  useEffect(() => {
+    if (!loading && !pageLoading) {
+      // If already onboarded, redirect to dashboard
+      if (isAuthenticated && onboardingComplete && student) {
+        toast.success('You have already completed onboarding');
+        const dashboardUrl = `/daksh/${student.schoolId}/${student.classId}/${student.id}?t=${Date.now()}`;
+        router.push(dashboardUrl);
+        return;
+      }
+
+      // If not authenticated, redirect to login
+      if (!isAuthenticated) {
+        toast.error('Please log in first');
+        router.push('/onboarding/login');
+        return;
+      }
+    }
+  }, [isAuthenticated, loading, router, student, onboardingComplete, pageLoading]);
 
   // Questions configuration
   const questions = [
@@ -226,13 +273,10 @@ export default function Questions() {
       localStorage.setItem('loginCompleted', 'true');
 
       // Create personalized dashboard URL
-      const dashboardUrl = student.schoolId ?
-        `/daksh/${student.schoolId}/${student.classId}/${student.id}?t=${Date.now()}` :
-        `/daksh?t=${Date.now()}`;
+      const dashboardUrl = `/daksh/${student.schoolId}/${student.classId}/${student.id}?t=${Date.now()}`;
 
       // Small delay to ensure all state updates before redirect
       setTimeout(() => {
-        // Add timestamp to prevent caching issues
         router.push(dashboardUrl);
       }, 500);
     } catch (error) {
@@ -283,9 +327,7 @@ export default function Questions() {
       toast.success('Personalization complete!');
 
       // Create personalized dashboard URL
-      const dashboardUrl = student.schoolId ?
-        `/daksh/${student.schoolId}/${student.classId}/${student.id}?t=${Date.now()}` :
-        `/daksh?t=${Date.now()}`;
+      const dashboardUrl = `/daksh/${student.schoolId}/${student.classId}/${student.id}?t=${Date.now()}`;
 
       // Redirect to dashboard with timestamp parameter
       setTimeout(() => {
@@ -298,7 +340,7 @@ export default function Questions() {
   };
 
   // Check if current question has an answer
-  const hasAnswer = !!answers[currentQuestion?.answer];
+  const hasAnswer = currentQuestion ? !!answers[currentQuestion.answer] : false;
 
   // Show loading state if loading
   if (loading || pageLoading) {
@@ -309,8 +351,8 @@ export default function Questions() {
     );
   }
 
-  // Don't render if not authenticated
-  if (!isAuthenticated) {
+  // Don't render if not authenticated or no student
+  if (!isAuthenticated || !student) {
     return null;
   }
 
@@ -329,12 +371,12 @@ export default function Questions() {
         </button>
 
         <div className="flex-1 flex flex-col mt-12">
-          {/* Title */}
+          {/* Title with student name */}
           <h1 className="text-3xl font-bold mb-2">
-            Personalize your experience
+            Personalize your experience, {student.name}
           </h1>
           <p className="text-gray-600 mb-8">
-            You can customize your feed by following topics or people that interest you the most
+            You can customize your feed by following topics that interest you the most
           </p>
 
           {/* Subjects grid */}
@@ -377,6 +419,13 @@ export default function Questions() {
   // Regular questions pages
   return (
     <div className="min-h-screen flex flex-col p-6">
+      {/* Student info */}
+      <div className="mb-6">
+        <h2 className="text-sm font-medium text-gray-500">
+          {student.name} • {student.className} • {student.schoolName}
+        </h2>
+      </div>
+
       {/* Progress indicator */}
       <div className="flex justify-center mb-6 space-x-2">
         {questions.map((_, index) => (

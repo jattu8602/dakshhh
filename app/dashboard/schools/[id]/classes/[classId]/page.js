@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { use } from 'react';
 import Link from 'next/link';
 import {
   getSchoolById,
@@ -11,7 +12,11 @@ import {
 import { generateRollNumbers } from '../../../../../lib/utils';
 
 export default function ClassDetailPage({ params }) {
-  const { id: schoolId, classId } = params;
+  // Properly unwrap params using React.use()
+  const unwrappedParams = use(params);
+  const schoolId = unwrappedParams.id;
+  const classId = unwrappedParams.classId;
+
   const [school, setSchool] = useState(null);
   const [classData, setClassData] = useState(null);
   const [students, setStudents] = useState([]);
