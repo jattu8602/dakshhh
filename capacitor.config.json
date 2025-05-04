@@ -1,0 +1,8 @@
+{
+  "appId": "io.daksh.app",
+  "appName": "Daksh",
+  "webDir": "out",
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Daksh Icon Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #4F46E5;
+        }
+        button {
+            background-color: #4F46E5;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        button:hover {
+            background-color: #4338CA;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            display: none;
+        }
+        canvas {
+            display: block;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Daksh Icon Generator</h1>
+        <p>Click the button below to generate icons for your PWA:</p>
+        <button id="generateBtn">Generate Icons</button>
+        <div id="result" class="result">
+            <p>Icons generated successfully! Check your browser's console for download links.</p>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('generateBtn').addEventListener('click', generateIcons);
+
+        function generateIcons() {
+            const sizes = [72, 96, 128, 144, 152, 192, 384, 512];
+
+            sizes.forEach(size => {
+                generateIcon(size);
+            });
+
+            // Also generate a maskable icon
+            generateIcon(192, true);
+
+            document.getElementById('result').style.display = 'block';
+        }
+
+        function generateIcon(size, isMaskable = false) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+
+            // Background
+            ctx.fillStyle = '#4F46E5';
+            ctx.fillRect(0, 0, size, size);
+
+            // If maskable, leave additional padding
+            const padding = isMaskable ? size * 0.2 : size * 0.1;
+
+            // Text
+            const text = 'D';
+            ctx.fillStyle = 'white';
+            ctx.font = `bold ${size - padding * 2}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(text, size / 2, size / 2);
+
+            // Create download link
+            const link = document.createElement('a');
+            link.download = isMaskable ? 'maskable_icon.png' : `icon-${size}x${size}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+
+            console.log(`Generated ${link.download}`);
+        }
+    </script>
+</body>
+</html>
