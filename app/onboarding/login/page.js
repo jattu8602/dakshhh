@@ -21,6 +21,7 @@ export default function StudentLogin() {
   const [isNavigating, setIsNavigating] = useState(false);
   const scannerRef = useRef(null);
   const qrContainerRef = useRef(null);
+  const redirectTimeoutRef = useRef(null);
 
   // Set error from auth context
   useEffect(() => {
@@ -30,18 +31,94 @@ export default function StudentLogin() {
     }
   }, [authError, isNavigating]);
 
-  // Clean up the scanner when component unmounts
+  // Clean up on unmount
   useEffect(() => {
     return () => {
+      // Clean up scanner
       if (scannerRef.current) {
         try {
-          scannerRef.current.stop();
+          // Only try to stop if scanning is active
+          if (scanActive) {
+            scannerRef.current.stop().catch(err => {
+              // Silent catch - no need to log errors during unmount
+            });
+          }
         } catch (err) {
-          console.error('Error stopping scanner on unmount:', err);
+          // Silent catch - we're cleaning up anyway
         }
       }
+
+      // Clear any pending timeouts
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [scanActive]);
+
+  // Handle redirect based on user's onboarding status
+  const handleSuccessfulLogin = (student) => {
+    setIsNavigating(true);
+
+    // Check if the student has already completed onboarding questions
+    const hasCompletedOnboarding = student && student.preferences;
+
+    if (hasCompletedOnboarding) {
+      // User has already completed questions, mark as onboarded
+      localStorage.setItem('onboarded', 'true');
+      setCookie('onboarded', 'true', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/'
+      });
+
+      toast.success('Welcome back!');
+
+      // Clear any existing timeout
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      // Redirect directly to dashboard
+      redirectTimeoutRef.current = setTimeout(() => {
+        try {
+          const dashboardUrl = new URL('/daksh', window.location.origin).toString();
+          router.push(dashboardUrl);
+        } catch (err) {
+          console.error('Navigation error:', err);
+          // Fallback direct navigation
+          window.location.href = '/daksh';
+        }
+      }, 750);
+    } else {
+      // User has not completed onboarding, redirect to questions
+      localStorage.setItem('loginCompleted', 'true');
+      localStorage.setItem('onboardingStep', 'questions');
+
+      // Set cookie for middleware
+      setCookie('onboarded', 'false', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/'
+      });
+
+      toast.success('Login successful!');
+
+      // Clear any existing timeout
+      if (redirectTimeoutRef.current) {
+        clearTimeout(redirectTimeoutRef.current);
+      }
+
+      // Redirect to questions page to complete onboarding
+      redirectTimeoutRef.current = setTimeout(() => {
+        try {
+          const questionsUrl = new URL('/onboarding/questions', window.location.origin).toString();
+          router.push(questionsUrl);
+        } catch (err) {
+          console.error('Navigation error:', err);
+          // Fallback direct navigation
+          window.location.href = '/onboarding/questions';
+        }
+      }, 750);
+    }
+  };
 
   // Toggle login method
   const toggleLoginMethod = () => {
@@ -137,15 +214,29 @@ export default function StudentLogin() {
     });
   };
 
+  // Handle QR scan error
+  const onScanError = (err) => {
+    // Only log serious errors, not the common "no QR code found" errors
+    if (err &&
+        !err.message?.includes("No barcode or QR code detected") &&
+        !err.message?.includes("NotFoundException")) {
+      console.error('QR scan error:', err);
+    }
+  };
+
   // Stop QR scanning - returns a promise
   const stopScanner = async () => {
     if (scannerRef.current && scanActive) {
       try {
-        await scannerRef.current.stop();
+        // Set scan state to inactive first to prevent multiple stop attempts
         setScanActive(false);
+        await scannerRef.current.stop();
         return true;
       } catch (err) {
-        console.error('Error stopping scanner:', err);
+        // Don't log transition state errors which are common during cleanup
+        if (!err.message?.includes("Cannot transition to a new state")) {
+          console.error('Error stopping scanner:', err);
+        }
         return false;
       }
     }
@@ -186,15 +277,6 @@ export default function StudentLogin() {
     }
   };
 
-  // Handle QR scan error
-  const onScanError = (err) => {
-    // This fires for every frame without a QR code, so we don't want to show errors
-    // Only log serious errors related to camera
-    if (err?.name !== 'NotFoundException') {
-      console.error('QR scan error:', err);
-    }
-  };
-
   // Process QR data and login
   const handleQRLogin = async (qrData) => {
     try {
@@ -204,24 +286,8 @@ export default function StudentLogin() {
         // Keep the navigating flag set to prevent additional toasts
         setIsNavigating(true);
 
-        // Show success toast only once
-        toast.success('Login successful!');
-
-        // Store a flag to indicate login is complete but onboarding isn't
-        localStorage.setItem('loginCompleted', 'true');
-        localStorage.setItem('onboardingStep', 'questions');
-
-        // Set cookie for middleware - explicitly set to false until questions are completed
-        setCookie('onboarded', 'false', {
-          maxAge: 30 * 24 * 60 * 60, // 30 days
-          path: '/'
-        });
-
-        // Small delay to ensure the scanner is fully stopped before navigation
-        setTimeout(() => {
-          // Redirect to questions page after successful login
-          router.push('/onboarding/questions');
-        }, 500);
+        // Handle successful login with the user's data
+        handleSuccessfulLogin(result.student);
       } else {
         setError(result.error || 'QR authentication failed');
         toast.error(result.error || 'QR authentication failed');
@@ -270,23 +336,8 @@ export default function StudentLogin() {
         // Set navigating flag to prevent additional toasts
         setIsNavigating(true);
 
-        toast.success('Login successful!');
-
-        // Store a flag to indicate login is complete but onboarding isn't
-        localStorage.setItem('loginCompleted', 'true');
-        localStorage.setItem('onboardingStep', 'questions');
-
-        // Set cookie for middleware - explicitly set to false until questions are completed
-        setCookie('onboarded', 'false', {
-          maxAge: 30 * 24 * 60 * 60, // 30 days
-          path: '/'
-        });
-
-        // Small delay before navigation to ensure toast is shown
-        setTimeout(() => {
-          // Redirect to questions page after successful login
-          router.push('/onboarding/questions');
-        }, 500);
+        // Handle successful login with the user's data
+        handleSuccessfulLogin(result.student);
       } else {
         setError(result.error || 'Authentication failed');
         toast.error(result.error || 'Authentication failed');

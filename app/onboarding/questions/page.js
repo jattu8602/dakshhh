@@ -5,24 +5,55 @@ import { useRouter } from 'next/navigation';
 import { updateStudent } from '../../lib/firestore';
 import { useStudent } from '../../lib/studentContext';
 import { setCookie } from 'cookies-next';
+import toast from 'react-hot-toast';
 
 export default function Questions() {
   const router = useRouter();
-  const { student, isAuthenticated, loading, completeOnboarding } = useStudent();
+  const { student, isAuthenticated, loading, completeOnboarding, onboardingComplete } = useStudent();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({
     discover: '',
     improvement: '',
     level: '',
-    goal: ''
+    goal: '',
+    subjects: []
   });
+  const [showSubjectsPage, setShowSubjectsPage] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
 
-  // Redirect if not logged in
+  // Handle navigation and authentication
   useEffect(() => {
-    if (!loading && !isAuthenticated) {
-      router.push('/onboarding/login');
+    if (!loading) {
+      // If already onboarded, redirect to dashboard
+      if (isAuthenticated && onboardingComplete) {
+        toast.success('You have already completed onboarding');
+        const timer = setTimeout(() => {
+          router.push('/daksh');
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+
+      // If not authenticated, redirect to login
+      if (!isAuthenticated) {
+        toast.error('Please log in first');
+        const timer = setTimeout(() => {
+          router.push('/onboarding/login');
+        }, 500);
+        return () => clearTimeout(timer);
+      }
+
+      // User is authenticated but not onboarded, show questions
+      setPageLoading(false);
+
+      // If the user has an existing student object, pre-fill answers from preferences
+      if (student && student.preferences) {
+        setAnswers({
+          ...answers,
+          ...student.preferences
+        });
+      }
     }
-  }, [isAuthenticated, loading, router]);
+  }, [isAuthenticated, loading, router, student, onboardingComplete]);
 
   // Questions configuration
   const questions = [
@@ -75,6 +106,19 @@ export default function Questions() {
     }
   ];
 
+  // Subject options
+  const subjectOptions = [
+    { id: 'history', label: 'History' },
+    { id: 'science', label: 'Science' },
+    { id: 'geography', label: 'Geography' },
+    { id: 'civics', label: 'Civics' },
+    { id: 'maths', label: 'Maths' },
+    { id: 'social', label: 'Social science' },
+    { id: 'sanskrit', label: 'Sanskrit' },
+    { id: 'hindi', label: 'Hindi' },
+    { id: 'english', label: 'English' }
+  ];
+
   // Current question
   const currentQuestion = questions[currentQuestionIndex];
 
@@ -86,49 +130,109 @@ export default function Questions() {
     });
   };
 
+  // Handle subject selection
+  const handleSubjectToggle = (subjectId) => {
+    const currentSubjects = [...answers.subjects];
+    if (currentSubjects.includes(subjectId)) {
+      // Remove subject if already selected
+      setAnswers({
+        ...answers,
+        subjects: currentSubjects.filter(id => id !== subjectId)
+      });
+    } else {
+      // Add subject if not selected
+      setAnswers({
+        ...answers,
+        subjects: [...currentSubjects, subjectId]
+      });
+    }
+  };
+
   // Handle next button
   const handleNext = async () => {
-    // If this is the last question, save answers and redirect
+    // If this is the last question, show subjects page
     if (currentQuestionIndex === questions.length - 1) {
-      try {
-        if (!student) {
-          console.error('No student data found. Unable to save preferences.');
-          router.push('/onboarding/login');
-          return;
-        }
-
-        // Save answers to Firebase
-        await updateStudent(
-          student.schoolId,
-          student.classId,
-          student.id,
-          {
-            preferences: answers
-          }
-        );
-
-        // Use the completeOnboarding function from context
-        completeOnboarding(answers);
-
-        // Small delay to ensure all state updates before redirect
-        setTimeout(() => {
-          router.push('/daksh');
-        }, 100);
-      } catch (error) {
-        console.error('Error saving answers:', error);
-        // Handle error state
-      }
+      setShowSubjectsPage(true);
     } else {
       // Move to the next question
       setCurrentQuestionIndex(currentQuestionIndex + 1);
     }
   };
 
+  // Handle saving all preferences and proceeding to dashboard
+  const handleSaveAndContinue = async () => {
+    try {
+      if (!student) {
+        console.error('No student data found. Unable to save preferences.');
+        router.push('/onboarding/login');
+        return;
+      }
+
+      toast.success('Preferences saved!');
+
+      // Save answers to Firebase
+      await updateStudent(
+        student.schoolId,
+        student.classId,
+        student.id,
+        {
+          preferences: answers
+        }
+      );
+
+      // Use the completeOnboarding function from context
+      completeOnboarding(answers);
+
+      // Small delay to ensure all state updates before redirect
+      setTimeout(() => {
+        router.push('/daksh');
+      }, 500);
+    } catch (error) {
+      console.error('Error saving answers:', error);
+      toast.error('Failed to save preferences');
+    }
+  };
+
+  // Handle skipping the subjects selection
+  const handleSkip = async () => {
+    // Just proceed without saving subject preferences
+    try {
+      if (!student) {
+        console.error('No student data found. Unable to save preferences.');
+        router.push('/onboarding/login');
+        return;
+      }
+
+      // Save answers to Firebase without subjects
+      await updateStudent(
+        student.schoolId,
+        student.classId,
+        student.id,
+        {
+          preferences: answers
+        }
+      );
+
+      // Use the completeOnboarding function from context
+      completeOnboarding(answers);
+
+      toast.success('Personalization complete!');
+
+      // Redirect to dashboard
+      setTimeout(() => {
+        router.push('/daksh');
+      }, 500);
+    } catch (error) {
+      console.error('Error saving answers:', error);
+      toast.error('Something went wrong');
+    }
+  };
+
   // Check if current question has an answer
-  const hasAnswer = !!answers[currentQuestion.answer];
+  const hasAnswer = !!answers[currentQuestion?.answer];
 
   // Show loading state if loading
-  if (loading) {
+  if (loading || pageLoading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
@@ -141,6 +245,67 @@ export default function Questions() {
     return null;
   }
 
+  // Subjects selection page
+  if (showSubjectsPage) {
+    return (
+      <div className="min-h-screen flex flex-col p-6">
+        {/* Back button */}
+        <button
+          onClick={() => setShowSubjectsPage(false)}
+          className="absolute left-4 top-4 text-black"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+
+        <div className="flex-1 flex flex-col mt-12">
+          {/* Title */}
+          <h1 className="text-3xl font-bold mb-2">
+            Personalize your experience
+          </h1>
+          <p className="text-gray-600 mb-8">
+            You can customize your feed by following topics or people that interest you the most
+          </p>
+
+          {/* Subjects grid */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {subjectOptions.map((subject) => (
+              <button
+                key={subject.id}
+                onClick={() => handleSubjectToggle(subject.id)}
+                className={`py-3 px-6 rounded-full font-medium text-center ${
+                  answers.subjects.includes(subject.id)
+                    ? 'bg-indigo-100 border-2 border-indigo-600 text-indigo-600'
+                    : 'bg-white border border-gray-300 text-gray-700'
+                }`}
+              >
+                {subject.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-auto space-y-3">
+            <button
+              onClick={handleSaveAndContinue}
+              className="w-full py-4 bg-black text-white rounded-full font-medium text-lg"
+            >
+              Save & continue
+            </button>
+            <button
+              onClick={handleSkip}
+              className="w-full py-4 bg-white border border-gray-300 text-black rounded-full font-medium text-lg"
+            >
+              Skip for now
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Regular questions pages
   return (
     <div className="min-h-screen flex flex-col p-6">
       {/* Progress indicator */}
@@ -213,7 +378,7 @@ export default function Questions() {
                 : 'bg-gray-300 text-gray-500 cursor-not-allowed'
             }`}
           >
-            {currentQuestionIndex === questions.length - 1 ? 'Finish' : 'Next'}
+            {currentQuestionIndex === questions.length - 1 ? 'Continue' : 'Next'}
           </button>
         </div>
       </div>

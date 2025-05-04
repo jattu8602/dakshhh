@@ -3,37 +3,56 @@ import { NextResponse } from 'next/server';
 // Middleware to handle client-side redirects for onboarding flow
 export function middleware(request) {
   const path = request.nextUrl.pathname;
-  console.log(`[Middleware] Request to: ${path}`);
 
-  // Check if it's a root request
+  // Get the onboarded cookie to check user state
+  const onboardedCookie = request.cookies.get('onboarded');
+  const isFullyOnboarded = onboardedCookie?.value === 'true';
+
+  // Root path redirects
   if (path === '/') {
-    // Create a cookie-based check (since we can't access localStorage in middleware)
-    const onboardedCookie = request.cookies.get('onboarded');
-
-    if (onboardedCookie?.value === 'true') {
-      // If onboarded cookie exists, redirect to daksh dashboard
+    if (isFullyOnboarded) {
+      // If fully onboarded, redirect to daksh dashboard
       return NextResponse.redirect(new URL('/daksh', request.url));
     } else {
-      // If not onboarded, redirect to onboarding
+      // If not fully onboarded, redirect to onboarding start
       return NextResponse.redirect(new URL('/onboarding', request.url));
     }
   }
 
-  // For daksh access, check if user is onboarded
+  // Handle daksh routes - protected for fully onboarded users only
   if (path.startsWith('/daksh')) {
-    const onboardedCookie = request.cookies.get('onboarded');
+    if (!isFullyOnboarded) {
+      // Only allow access to daksh if properly onboarded
+      // Check if user is in the middle of onboarding
+      const hasLoginCookie = request.cookies.get('loginCompleted')?.value === 'true';
 
-    // Only allow access to daksh if properly onboarded
-    if (onboardedCookie?.value !== 'true') {
-      // If not onboarded, redirect to start of onboarding
-      return NextResponse.redirect(new URL('/onboarding', request.url));
+      if (hasLoginCookie) {
+        // If logged in but not fully onboarded, send to questions
+        return NextResponse.redirect(new URL('/onboarding/questions', request.url));
+      } else {
+        // If not logged in at all, start from beginning
+        return NextResponse.redirect(new URL('/onboarding', request.url));
+      }
     }
   }
 
-  // All onboarding paths are allowed at this level
-  // Client-side redirects will handle specific onboarding steps
+  // Handle onboarding routes - skip for fully onboarded users
+  if (path.startsWith('/onboarding')) {
+    // Skip login/questions for fully onboarded users and send directly to dashboard
+    if (isFullyOnboarded && (path === '/onboarding' || path === '/onboarding/login' || path === '/onboarding/questions')) {
+      return NextResponse.redirect(new URL('/daksh', request.url));
+    }
 
-  // Handle dashboard paths - only super users should directly access these
+    // Special handling for questions page - require login
+    if (path === '/onboarding/questions') {
+      const loginCompleted = request.cookies.get('loginCompleted')?.value === 'true';
+      if (!loginCompleted) {
+        return NextResponse.redirect(new URL('/onboarding/login', request.url));
+      }
+    }
+  }
+
+  // Handle dashboard admin paths - only super users should directly access these
   if (path.startsWith('/dashboard') && path !== '/dashboard/login') {
     // Check for a session cookie or token (simplified)
     const authCookie = request.cookies.get('next-auth.session-token') ||

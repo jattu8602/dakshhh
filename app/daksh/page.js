@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { useStudent } from '../lib/studentContext';
 import InstallPWA from '../components/InstallPWA';
+import toast from 'react-hot-toast';
 
 export default function DakshHomePage() {
   const router = useRouter();
@@ -47,12 +48,14 @@ export default function DakshHomePage() {
     if (!studentLoading) {
       // Check if user is authenticated
       if (!isAuthenticated) {
-        router.push('/onboarding');
+        toast.error('Please log in to access your dashboard');
+        router.push('/onboarding/login');
         return;
       }
 
       // Check if student has completed onboarding
       if (isAuthenticated && !onboardingComplete) {
+        toast.info('Please complete your onboarding first');
         router.push('/onboarding/questions');
         return;
       }
