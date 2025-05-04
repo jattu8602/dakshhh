@@ -6,6 +6,7 @@ import Image from 'next/image';
 import { useStudent } from '../lib/studentContext';
 import InstallPWA from '../components/InstallPWA';
 import toast from 'react-hot-toast';
+import { setCookie } from 'cookies-next';
 
 export default function DakshHomePage() {
   const router = useRouter();
@@ -44,20 +45,41 @@ export default function DakshHomePage() {
     }
   ];
 
-  // Add redirect loop detection and fixing code
+  // PRIORITY REDIRECTION: This must run first, even before student context is loaded
   useEffect(() => {
     // Check for force redirect or if we came from middleware
     const forcedRedirect = searchParams.get('forcedRedirect') === 'true';
     const timestamp = searchParams.get('t');
 
-    // Check cookies to ensure they're set properly for this page
+    // IMMEDIATE COOKIE CHECK: Before waiting for student context
     const hasLoginCookie = document.cookie.includes('loginCompleted=true');
     const hasOnboardedCookie = document.cookie.includes('onboarded=true');
 
+    // If not authenticated via cookies, redirect immediately
+    if (!hasLoginCookie) {
+      console.log('[Daksh Page] Not logged in, redirecting to onboarding immediately');
+      window.location.href = '/onboarding/login';
+      return;
+    }
+
+    // If we have studentData cookie, use it for immediate redirection
+    const studentDataCookieMatch = document.cookie.match(/studentData=([^;]+)/);
+    if (studentDataCookieMatch) {
+      try {
+        const studentData = JSON.parse(decodeURIComponent(studentDataCookieMatch[1]));
+        if (studentData && studentData.schoolId && studentData.classId && studentData.id) {
+          console.log('[Daksh Page] Found student data in cookie, redirecting immediately');
+          window.location.href = `/daksh/${studentData.schoolId}/${studentData.classId}/${studentData.id}`;
+          return;
+        }
+      } catch (e) {
+        console.warn('[Daksh Page] Failed to parse student data cookie:', e);
+      }
+    }
+
     // If we're missing required cookies, set them now
     if (!hasLoginCookie || !hasOnboardedCookie) {
-      console.log('Dashboard: Fixing missing cookies to prevent redirect loops');
-
+      console.log('[Daksh Page] Fixing missing cookies to prevent redirect loops');
       // Force set the cookies needed for dashboard access
       document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
       document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
@@ -67,20 +89,22 @@ export default function DakshHomePage() {
       localStorage.setItem('onboarded', 'true');
     }
 
-    // Clean URL if we have timestamp or force parameters (optional)
+    // Clean URL if we have timestamp or force parameters
     if (timestamp || forcedRedirect) {
       const url = new URL(window.location.href);
       url.searchParams.delete('t');
       url.searchParams.delete('forcedRedirect');
       window.history.replaceState({}, '', url);
     }
-  }, [searchParams]);
+  }, [searchParams]); // This effect runs before student context is loaded
 
+  // SECONDARY REDIRECT: Using student context (runs after context is loaded)
   useEffect(() => {
     // Only proceed when studentLoading is complete
     if (!studentLoading) {
       // Check if user is authenticated
       if (!isAuthenticated) {
+        console.log('[Daksh Page] Not authenticated in context, redirecting to login');
         toast.error('Please log in to access your dashboard');
         router.push('/onboarding/login');
         return;
@@ -88,6 +112,7 @@ export default function DakshHomePage() {
 
       // Check if student has completed onboarding
       if (isAuthenticated && !onboardingComplete) {
+        console.log('[Daksh Page] Onboarding not complete, redirecting to questions');
         toast.info('Please complete your onboarding first');
         router.push('/onboarding/questions');
         return;
@@ -95,19 +120,25 @@ export default function DakshHomePage() {
 
       // If we have student details, redirect to personalized URL
       if (student && student.schoolId && student.classId && student.id) {
-        console.log('Redirecting from generic /daksh to personalized dashboard URL');
+        console.log('[Daksh Page] Redirecting from generic /daksh to personalized dashboard URL');
 
         // Store minimal student data in cookie for middleware optimization
         const minimalStudentData = {
           id: student.id,
           schoolId: student.schoolId,
-          classId: student.classId
+          classId: student.classId,
+          name: student.name || ''
         };
 
-        // Set cookie with student data
+        // Set cookie with student data both ways for redundancy
         document.cookie = `studentData=${encodeURIComponent(JSON.stringify(minimalStudentData))};path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+        setCookie('studentData', JSON.stringify(minimalStudentData), {
+          maxAge: 30 * 24 * 60 * 60,
+          path: '/',
+          sameSite: 'lax'
+        });
 
-        // Redirect to personalized URL
+        // Redirect to personalized URL with router
         router.push(`/daksh/${student.schoolId}/${student.classId}/${student.id}`);
         return;
       }

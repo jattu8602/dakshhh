@@ -82,8 +82,8 @@ export function middleware(request) {
   if (path === '/daksh') {
     // Not logged in - redirect to onboarding immediately
     if (!hasLoginCompleted) {
-      console.log('[Middleware] Redirecting /daksh to /onboarding (not logged in)');
-      const redirectResponse = NextResponse.redirect(new URL('/onboarding', request.url));
+      console.log('[Middleware] Redirecting /daksh to /onboarding/login (not logged in)');
+      const redirectResponse = NextResponse.redirect(new URL('/onboarding/login', request.url));
       redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
       return redirectResponse;
     }
@@ -98,6 +98,10 @@ export function middleware(request) {
           const personalizedUrl = `/daksh/${studentData.schoolId}/${studentData.classId}/${studentData.id}`;
           const redirectResponse = NextResponse.redirect(new URL(personalizedUrl, request.url));
           redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+
+          // Add timestamp to prevent caching issues and force a fresh page load
+          redirectResponse.headers.set('Cache-Control', 'no-store, max-age=0');
+
           return redirectResponse;
         }
       } catch (e) {
@@ -105,9 +109,12 @@ export function middleware(request) {
       }
     }
 
-    // Allow access to generic dashboard for client-side redirection if needed
+    // Allow access to generic dashboard for client-side redirection
     console.log('[Middleware] Allowing access to generic /daksh (will handle redirection client-side)');
-    return response;
+    const clientSideResponse = NextResponse.next();
+    // Add cache control headers to ensure fresh content
+    clientSideResponse.headers.set('Cache-Control', 'no-store, max-age=0');
+    return clientSideResponse;
   }
 
   // PRIORITY 3: Handle personalized paths
