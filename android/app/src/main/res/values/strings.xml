@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Daksh</string>
-    <string name="title_activity_main">Daksh</string>
-    <string name="package_name">io.daksh.app</string>
-    <string name="custom_url_scheme">io.daksh.app</string>
-</resources>
