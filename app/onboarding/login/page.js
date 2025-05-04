@@ -212,18 +212,56 @@ export default function StudentLogin() {
         return;
       }
 
-      const html5QrCode = new Html5Qrcode("qr-reader");
-      scannerRef.current = html5QrCode;
+      // First check if camera permissions are available
+      try {
+        // Request camera permission explicitly before initializing scanner
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "environment" }
+        });
 
-      setScannerReady(true);
+        // Close the test stream right away
+        stream.getTracks().forEach(track => track.stop());
 
-      // Skip toast and start scanner immediately
-      startScanner();
+        // Handle errors from NextAuth or other global errors
+        window.addEventListener('error', (event) => {
+          // Ignore QR scanner related errors - we handle those separately
+          if (event.message.includes('next-auth') || event.message.includes('CLIENT_FETCH_ERROR')) {
+            // Prevent these errors from affecting the QR scanner
+            console.warn('NextAuth error detected, continuing QR scanning functionality');
+            event.stopPropagation();
+            event.preventDefault();
+          }
+        }, true);
+
+        // Now initialize the scanner after permissions are granted
+        const html5QrCode = new Html5Qrcode("qr-reader");
+        scannerRef.current = html5QrCode;
+
+        setScannerReady(true);
+        startScanner();
+      } catch (permissionError) {
+        console.error('Camera permission error:', permissionError);
+
+        // Check the specific error type
+        if (permissionError.name === 'NotAllowedError') {
+          setError('Camera permission was denied. Please allow camera access in your browser settings and try again.');
+          toast.error('Camera permission denied. Please check your browser settings.');
+        } else if (permissionError.name === 'NotFoundError') {
+          setError('No camera found. Please make sure your device has a camera.');
+          toast.error('No camera found on your device.');
+        } else if (permissionError.name === 'NotReadableError') {
+          setError('Camera is in use by another application. Please close other apps using the camera.');
+          toast.error('Camera is in use by another application.');
+        } else {
+          setError('Could not access camera. Please check permissions and try again.');
+          toast.error('Could not access camera. Please check permissions.');
+        }
+      }
     } catch (err) {
       console.error('Failed to initialize scanner:', err);
       if (!isNavigating) {
-        toast.error('Could not access camera. Please check permissions.');
-        setError('Could not access camera. Please check permissions.');
+        toast.error('Could not access camera. Try refreshing the page or checking browser settings.');
+        setError('Camera access failed. Please check browser permissions or try a different device.');
       }
     }
   };
@@ -232,11 +270,23 @@ export default function StudentLogin() {
   const startScanner = () => {
     if (!scannerRef.current || isNavigating) return;
 
+    // Define QR code format with fallback handling
+    const formats = [];
+    try {
+      // Check if Html5Qrcode.FORMATS exists and has QR_CODE
+      if (Html5Qrcode.FORMATS && Html5Qrcode.FORMATS.QR_CODE) {
+        formats.push(Html5Qrcode.FORMATS.QR_CODE);
+      }
+    } catch (err) {
+      console.warn('Html5Qrcode formats not available, scanning all formats');
+    }
+
     const qrConfig = {
       fps: 15, // Increased from 10 for faster scanning
       qrbox: { width: 300, height: 300 }, // Increased size for better detection
       aspectRatio: 1.0,
-      formatsToSupport: [Html5Qrcode.FORMATS.QR_CODE], // Focus only on QR codes for better performance
+      // Only set formats if we successfully got them
+      ...(formats.length > 0 ? { formatsToSupport: formats } : {}),
       experimentalFeatures: {
         useBarCodeDetectorIfSupported: true // Use native detector if available
       }
@@ -250,12 +300,19 @@ export default function StudentLogin() {
     )
     .then(() => {
       setScanActive(true);
+      // Clear any error messages since camera is working now
+      setError('');
     })
     .catch((err) => {
       console.error('Scanner start error:', err);
       if (!isNavigating) {
-        toast.error('Failed to start camera');
-        setError('Failed to start camera');
+        if (err.message?.includes("Camera access is denied")) {
+          toast.error('Camera access denied. Please check permissions in your browser settings.');
+          setError('Camera access denied. Please allow camera access in your browser settings and refresh this page.');
+        } else {
+          toast.error('Failed to start camera. Try refreshing the page.');
+          setError('Failed to start camera: ' + err.message);
+        }
       }
     });
   };
@@ -431,6 +488,21 @@ export default function StudentLogin() {
           {error && (
             <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
               {error}
+              {(error.includes('permission') || error.includes('access')) && (
+                <div className="mt-2 text-sm">
+                  <button
+                    onClick={() => {
+                      setError('');
+                      if (loginMethod === 'qr') {
+                        initializeScanner();
+                      }
+                    }}
+                    className="text-blue-600 underline"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -576,6 +648,19 @@ export default function StudentLogin() {
                   <div className="mt-4 text-xs text-center text-gray-500">
                     Make sure the QR code is within the scanning area and well-lit
                   </div>
+                  {error && error.includes('camera') && (
+                    <div className="mt-4 text-center">
+                      <button
+                        onClick={() => {
+                          setError('');
+                          initializeScanner();
+                        }}
+                        className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                      >
+                        Retry Camera Access
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </>
