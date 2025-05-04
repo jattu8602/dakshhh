@@ -57,6 +57,10 @@ export function StudentProvider({ children }) {
 
   // Set student and handle onboarding status
   const setStudentAndHandleOnboarding = (selectedStudent) => {
+    // Clear any previous student data to avoid conflicts
+    logout(false); // Clear data without triggering UI effects
+
+    // Set new student data
     setStudent(selectedStudent);
     localStorage.setItem('student', JSON.stringify(selectedStudent));
     localStorage.setItem('loginCompleted', 'true');
@@ -156,12 +160,16 @@ export function StudentProvider({ children }) {
   };
 
   // Logout
-  const logout = () => {
-    setStudent(null);
-    setOnboardingComplete(false);
-    setCurrentOnboardingStep(null);
-    setMatchingStudents([]);
-    setMultipleMatches(false);
+  const logout = (updateUI = true) => {
+    if (updateUI) {
+      setStudent(null);
+      setOnboardingComplete(false);
+      setCurrentOnboardingStep(null);
+      setMatchingStudents([]);
+      setMultipleMatches(false);
+    }
+
+    // Always clear storage
     localStorage.removeItem('student');
     localStorage.removeItem('onboarded');
     localStorage.removeItem('loginCompleted');
@@ -169,6 +177,8 @@ export function StudentProvider({ children }) {
 
     // Clear onboarded cookie
     setCookie('onboarded', '', { maxAge: 0, path: '/' });
+
+    return { success: true };
   };
 
   // Complete onboarding after questions

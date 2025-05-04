@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 
 export default function StudentLogin() {
   const router = useRouter();
-  const { login, loginWithQR, selectStudent, matchingStudents, multipleMatches, error: authError, loading: authLoading } = useStudent();
+  const { login, loginWithQR, selectStudent, matchingStudents, multipleMatches, error: authError, loading: authLoading, logout } = useStudent();
   const [loginMethod, setLoginMethod] = useState('credentials'); // 'credentials' or 'qr'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -22,6 +22,25 @@ export default function StudentLogin() {
   const scannerRef = useRef(null);
   const qrContainerRef = useRef(null);
   const redirectTimeoutRef = useRef(null);
+
+  // Clean up any previous login state when component mounts
+  useEffect(() => {
+    // Clear any previous navigation attempts
+    if (redirectTimeoutRef.current) {
+      clearTimeout(redirectTimeoutRef.current);
+    }
+
+    // Reset states
+    setIsNavigating(false);
+    setLoading(false);
+
+    // If we're in the login page, make sure we're not in a half-logged-in state
+    const currentPath = window.location.pathname;
+    if (currentPath.includes('/onboarding/login')) {
+      // Clear previous login attempts but don't update UI state
+      logout();
+    }
+  }, []);
 
   // Set error from auth context
   useEffect(() => {
@@ -77,17 +96,24 @@ export default function StudentLogin() {
         clearTimeout(redirectTimeoutRef.current);
       }
 
-      // Redirect directly to dashboard
+      // Redirect directly to dashboard - reduced timeout for faster navigation
       redirectTimeoutRef.current = setTimeout(() => {
         try {
           const dashboardUrl = new URL('/daksh', window.location.origin).toString();
           router.push(dashboardUrl);
+
+          // Fallback - force navigation after a short delay if router.push doesn't work
+          setTimeout(() => {
+            if (document.location.pathname !== '/daksh') {
+              window.location.href = '/daksh';
+            }
+          }, 300);
         } catch (err) {
           console.error('Navigation error:', err);
           // Fallback direct navigation
           window.location.href = '/daksh';
         }
-      }, 750);
+      }, 300); // Reduced from 750ms to 300ms for faster navigation
     } else {
       // User has not completed onboarding, redirect to questions
       localStorage.setItem('loginCompleted', 'true');
@@ -106,17 +132,24 @@ export default function StudentLogin() {
         clearTimeout(redirectTimeoutRef.current);
       }
 
-      // Redirect to questions page to complete onboarding
+      // Redirect to questions page to complete onboarding - reduced timeout
       redirectTimeoutRef.current = setTimeout(() => {
         try {
           const questionsUrl = new URL('/onboarding/questions', window.location.origin).toString();
           router.push(questionsUrl);
+
+          // Fallback - force navigation after a short delay if router.push doesn't work
+          setTimeout(() => {
+            if (document.location.pathname !== '/onboarding/questions') {
+              window.location.href = '/onboarding/questions';
+            }
+          }, 300);
         } catch (err) {
           console.error('Navigation error:', err);
           // Fallback direct navigation
           window.location.href = '/onboarding/questions';
         }
-      }, 750);
+      }, 300); // Reduced from 750ms to 300ms for faster navigation
     }
   };
 
@@ -127,6 +160,7 @@ export default function StudentLogin() {
     try {
       setLoading(true);
       setError('');
+      setIsNavigating(true); // Set navigating state immediately to prevent multiple selections
 
       const result = await selectStudent(index);
 
@@ -136,11 +170,13 @@ export default function StudentLogin() {
       } else {
         setError(result.error || 'Selection failed');
         toast.error(result.error || 'Selection failed');
+        setIsNavigating(false); // Reset navigating state on error
       }
     } catch (err) {
       console.error('Selection error:', err);
       setError('Failed to select student');
       toast.error('Failed to select student');
+      setIsNavigating(false); // Reset navigating state on error
     } finally {
       setLoading(false);
     }
@@ -311,7 +347,7 @@ export default function StudentLogin() {
       if (result.success) {
         if (result.multipleMatches) {
           // Multiple students found, let user select one
-          setIsNavigating(false);
+          setIsNavigating(false); // Reset navigating state to allow selection
           toast.success('Multiple accounts found. Please select one.');
         } else {
           // Keep the navigating flag set to prevent additional toasts
@@ -369,7 +405,7 @@ export default function StudentLogin() {
           setIsNavigating(false);
           toast.success('Multiple accounts found. Please select one.');
         } else {
-          // Set navigating flag to prevent additional toasts
+          // Set navigating flag to prevent additional toasts and actions
           setIsNavigating(true);
           // Handle successful login with the user's data
           handleSuccessfulLogin(result.student);
@@ -389,7 +425,18 @@ export default function StudentLogin() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Removed duplicate Toaster component - using the global one from ClientLayout */}
+      {/* Navigation overlay - shown when navigating to indicate transition */}
+      {isNavigating && (
+        <div className="fixed inset-0 bg-indigo-500 bg-opacity-50 z-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg shadow-xl text-center">
+            <svg className="animate-spin h-10 w-10 text-indigo-600 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p className="text-indigo-700 font-medium">Redirecting to dashboard...</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 flex flex-col items-center justify-center px-6 py-12">
         <div className="w-full max-w-md space-y-8">
