@@ -136,6 +136,11 @@ export function StudentProvider({ children }) {
     setLoading(true);
 
     try {
+      // Clear any previous auth state before attempting login
+      setMatchingStudents([]);
+      setMultipleMatches(false);
+
+      // Try to parse and authenticate
       const result = await authenticateStudentByQR(qrData);
 
       if (result.authenticated) {
@@ -145,15 +150,16 @@ export function StudentProvider({ children }) {
           setMultipleMatches(true);
           return { success: true, multipleMatches: true, students: result.students };
         } else {
-          // Single student found
+          // Single student found - immediately set the student
           return setStudentAndHandleOnboarding(result.students[0]);
         }
       } else {
         throw new Error('Invalid QR code');
       }
     } catch (err) {
-      setError(err.message);
-      return { success: false, error: err.message };
+      console.error('QR login error:', err);
+      setError(err.message || 'Failed to authenticate with QR code');
+      return { success: false, error: err.message || 'Failed to authenticate with QR code' };
     } finally {
       setLoading(false);
     }

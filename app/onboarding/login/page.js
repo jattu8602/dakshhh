@@ -77,9 +77,15 @@ export default function StudentLogin() {
   // Handle redirect based on user's onboarding status
   const handleSuccessfulLogin = (student) => {
     setIsNavigating(true);
+    setLoading(true);
 
     // Check if the student has already completed onboarding questions
     const hasCompletedOnboarding = student && student.preferences;
+
+    // Clear any existing timeout first
+    if (redirectTimeoutRef.current) {
+      clearTimeout(redirectTimeoutRef.current);
+    }
 
     if (hasCompletedOnboarding) {
       // User has already completed questions, mark as onboarded
@@ -91,29 +97,17 @@ export default function StudentLogin() {
 
       toast.success('Welcome back!');
 
-      // Clear any existing timeout
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
-      }
-
-      // Redirect directly to dashboard - reduced timeout for faster navigation
-      redirectTimeoutRef.current = setTimeout(() => {
-        try {
-          const dashboardUrl = new URL('/daksh', window.location.origin).toString();
-          router.push(dashboardUrl);
-
-          // Fallback - force navigation after a short delay if router.push doesn't work
-          setTimeout(() => {
-            if (document.location.pathname !== '/daksh') {
-              window.location.href = '/daksh';
-            }
-          }, 300);
-        } catch (err) {
-          console.error('Navigation error:', err);
-          // Fallback direct navigation
+      // Immediate redirect attempt for faster navigation
+      try {
+        // Force direct navigation - more reliable than router.push for cross-page navigation
+        window.location.href = '/daksh';
+      } catch (err) {
+        console.error('Navigation error:', err);
+        // Fallback with timeout
+        redirectTimeoutRef.current = setTimeout(() => {
           window.location.href = '/daksh';
-        }
-      }, 300); // Reduced from 750ms to 300ms for faster navigation
+        }, 100);
+      }
     } else {
       // User has not completed onboarding, redirect to questions
       localStorage.setItem('loginCompleted', 'true');
@@ -127,29 +121,17 @@ export default function StudentLogin() {
 
       toast.success('Login successful!');
 
-      // Clear any existing timeout
-      if (redirectTimeoutRef.current) {
-        clearTimeout(redirectTimeoutRef.current);
-      }
-
-      // Redirect to questions page to complete onboarding - reduced timeout
-      redirectTimeoutRef.current = setTimeout(() => {
-        try {
-          const questionsUrl = new URL('/onboarding/questions', window.location.origin).toString();
-          router.push(questionsUrl);
-
-          // Fallback - force navigation after a short delay if router.push doesn't work
-          setTimeout(() => {
-            if (document.location.pathname !== '/onboarding/questions') {
-              window.location.href = '/onboarding/questions';
-            }
-          }, 300);
-        } catch (err) {
-          console.error('Navigation error:', err);
-          // Fallback direct navigation
+      // Immediate redirect attempt
+      try {
+        // Force direct navigation - more reliable than router.push
+        window.location.href = '/onboarding/questions';
+      } catch (err) {
+        console.error('Navigation error:', err);
+        // Fallback with timeout
+        redirectTimeoutRef.current = setTimeout(() => {
           window.location.href = '/onboarding/questions';
-        }
-      }, 300); // Reduced from 750ms to 300ms for faster navigation
+        }, 100);
+      }
     }
   };
 
@@ -171,13 +153,13 @@ export default function StudentLogin() {
         setError(result.error || 'Selection failed');
         toast.error(result.error || 'Selection failed');
         setIsNavigating(false); // Reset navigating state on error
+        setLoading(false);
       }
     } catch (err) {
       console.error('Selection error:', err);
       setError('Failed to select student');
       toast.error('Failed to select student');
       setIsNavigating(false); // Reset navigating state on error
-    } finally {
       setLoading(false);
     }
   };
@@ -199,12 +181,13 @@ export default function StudentLogin() {
     if (isNavigating) return;
 
     if (loginMethod === 'qr' && !scannerReady && qrContainerRef.current) {
-      // Small delay to ensure DOM is ready
-      const timer = setTimeout(() => {
-        initializeScanner();
-      }, 100);
-
-      return () => clearTimeout(timer);
+      // Immediately initialize scanner, no need for delay
+      initializeScanner();
+      return () => {
+        if (scannerRef.current && scanActive) {
+          stopScanner();
+        }
+      };
     }
 
     return () => {
@@ -212,7 +195,7 @@ export default function StudentLogin() {
         stopScanner();
       }
     };
-  }, [loginMethod, qrContainerRef.current, isNavigating, scanActive]);
+  }, [loginMethod, qrContainerRef.current, isNavigating]);
 
   // Initialize the QR scanner
   const initializeScanner = async () => {
@@ -233,12 +216,9 @@ export default function StudentLogin() {
       scannerRef.current = html5QrCode;
 
       setScannerReady(true);
-      startScanner();
 
-      // Show toast only if not already navigating
-      if (!isNavigating) {
-        toast.success('Camera initialized. Point it at a QR code.');
-      }
+      // Skip toast and start scanner immediately
+      startScanner();
     } catch (err) {
       console.error('Failed to initialize scanner:', err);
       if (!isNavigating) {
@@ -248,14 +228,18 @@ export default function StudentLogin() {
     }
   };
 
-  // Start QR scanning
+  // Start QR scanning with optimized configuration
   const startScanner = () => {
     if (!scannerRef.current || isNavigating) return;
 
     const qrConfig = {
-      fps: 10,
-      qrbox: { width: 250, height: 250 },
-      aspectRatio: 1.0
+      fps: 15, // Increased from 10 for faster scanning
+      qrbox: { width: 300, height: 300 }, // Increased size for better detection
+      aspectRatio: 1.0,
+      formatsToSupport: [Html5Qrcode.FORMATS.QR_CODE], // Focus only on QR codes for better performance
+      experimentalFeatures: {
+        useBarCodeDetectorIfSupported: true // Use native detector if available
+      }
     };
 
     scannerRef.current.start(
@@ -310,18 +294,15 @@ export default function StudentLogin() {
     if (isNavigating) return;
 
     try {
-      // Set navigating first to prevent multiple scans and toasts
+      // Set navigating first to prevent multiple scans
       setIsNavigating(true);
+      setLoading(true);
 
-      // Stop scanning immediately to prevent multiple scans
+      // Stop scanning immediately
       await stopScanner();
 
-      // Only show toast if not navigating
-      if (!isNavigating) {
-        toast.success('QR code detected!');
-      }
-
-      setLoading(true);
+      // Minimal toast to avoid delays
+      toast.success('QR code detected!', { duration: 1500 });
 
       // Try to parse the QR data and login
       await handleQRLogin(decodedText);
@@ -332,10 +313,8 @@ export default function StudentLogin() {
       setLoading(false);
       setIsNavigating(false);
 
-      // Restart scanner after error only if we haven't started navigating
-      if (!isNavigating) {
-        startScanner();
-      }
+      // Restart scanner after error
+      startScanner();
     }
   };
 
@@ -351,7 +330,6 @@ export default function StudentLogin() {
           toast.success('Multiple accounts found. Please select one.');
         } else {
           // Keep the navigating flag set to prevent additional toasts
-          setIsNavigating(true);
           // Handle successful login with the user's data
           handleSuccessfulLogin(result.student);
         }
@@ -359,24 +337,20 @@ export default function StudentLogin() {
         setError(result.error || 'QR authentication failed');
         toast.error(result.error || 'QR authentication failed');
         setIsNavigating(false);
+        setLoading(false);
 
         // Restart scanner after error
-        if (!isNavigating) {
-          startScanner();
-        }
+        startScanner();
       }
     } catch (err) {
       console.error('QR login error:', err);
       setError('Failed to authenticate with QR code');
       toast.error('Failed to authenticate with QR code');
       setIsNavigating(false);
+      setLoading(false);
 
       // Restart scanner after error
-      if (!isNavigating) {
-        startScanner();
-      }
-    } finally {
-      setLoading(false);
+      startScanner();
     }
   };
 
@@ -413,12 +387,12 @@ export default function StudentLogin() {
       } else {
         setError(result.error || 'Authentication failed');
         toast.error(result.error || 'Authentication failed');
+        setLoading(false);
       }
     } catch (err) {
       console.error('Login error:', err);
       setError('Invalid username or password. Please try again.');
       toast.error('Invalid username or password. Please try again.');
-    } finally {
       setLoading(false);
     }
   };

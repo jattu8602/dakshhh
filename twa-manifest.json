@@ -1,9 +1,9 @@
 {
   "packageId": "app.vercel.dakshhh.twa",
   "host": "dakshhh.vercel.app",
-  "name": "Daksh",
+  "name": "Daksh Learning Platform",
   "launcherName": "Daksh",
-  "display": "fullscreen",
+  "display": "standalone",
   "themeColor": "#4F46E5",
   "themeColorDark": "#000000",
   "navigationColor": "#000000",
@@ -17,7 +17,7 @@
   "splashScreenFadeOutDuration": 300,
   "signingKey": {
     "path": "/Users/jattu/Desktop/dakshhh/android.keystore",
-    "alias": "android"
+    "alias": "Daksh"
   },
   "appVersionName": "1",
   "appVersionCode": 1,

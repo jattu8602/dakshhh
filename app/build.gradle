@@ -24,7 +24,7 @@ def twaManifest = [
     applicationId: 'app.vercel.dakshhh.twa',
     hostName: 'dakshhh.vercel.app', // The domain being opened in the TWA.
     launchUrl: '/', // The start path for the TWA. Must be relative to the domain.
-    name: 'Daksh', // The application name.
+    name: 'Daksh Learning Platform', // The application name.
     launcherName: 'Daksh', // The name shown on the Android Launcher.
     themeColor: '#4F46E5', // The color used for the status bar.
     themeColorDark: '#000000', // The color used for the dark status bar.

@@ -229,8 +229,22 @@ export const authenticateStudent = async (username, password) => {
 // Authenticate student by QR code data
 export const authenticateStudentByQR = async (qrData) => {
   try {
-    // QR data should contain username and password
-    const { username, password } = JSON.parse(qrData);
+    let parsedData;
+    // Try to parse the QR data
+    try {
+      parsedData = JSON.parse(qrData);
+    } catch (parseError) {
+      console.error('QR data parsing error:', parseError);
+      throw new Error('Invalid QR code format. Please try again.');
+    }
+
+    // Validate required fields
+    const { username, password } = parsedData;
+    if (!username || !password) {
+      throw new Error('Invalid QR code content. Missing required data.');
+    }
+
+    // Authenticate with the parsed data
     return await authenticateStudent(username, password);
   } catch (error) {
     console.error('QR authentication error:', error);
