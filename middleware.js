@@ -6,32 +6,52 @@ export function middleware(request) {
 
   // Get the onboarded cookie to check user state
   const onboardedCookie = request.cookies.get('onboarded');
+  const loginCompletedCookie = request.cookies.get('loginCompleted');
+
   const isFullyOnboarded = onboardedCookie?.value === 'true';
+  const hasLoginCompleted = loginCompletedCookie?.value === 'true';
+
+  // Debug cookie information - add a custom header that we can inspect
+  const response = NextResponse.next();
+
+  response.headers.set('x-middleware-debug',
+    `path=${path}, onboarded=${onboardedCookie?.value || 'missing'}, loginCompleted=${loginCompletedCookie?.value || 'missing'}`
+  );
 
   // Root path redirects
   if (path === '/') {
     if (isFullyOnboarded) {
       // If fully onboarded, redirect to daksh dashboard
-      return NextResponse.redirect(new URL('/daksh', request.url));
+      const redirectUrl = new URL('/daksh', request.url);
+      return NextResponse.redirect(redirectUrl);
     } else {
       // If not fully onboarded, redirect to onboarding start
-      return NextResponse.redirect(new URL('/onboarding', request.url));
+      const redirectUrl = new URL('/onboarding', request.url);
+      return NextResponse.redirect(redirectUrl);
     }
   }
 
   // Handle daksh routes - protected for fully onboarded users only
   if (path.startsWith('/daksh')) {
+    // Special case: Allow /daksh with login cookie even if not fully onboarded
+    // This helps when middleware hasn't yet detected updated cookie state
+    if (hasLoginCompleted) {
+      // Let them access daksh even if onboarded cookie isn't set yet
+      // This might be a temporary state after login but before preferences are set
+      return response;
+    }
+
     if (!isFullyOnboarded) {
       // Only allow access to daksh if properly onboarded
       // Check if user is in the middle of onboarding
-      const hasLoginCookie = request.cookies.get('loginCompleted')?.value === 'true';
-
-      if (hasLoginCookie) {
+      if (hasLoginCompleted) {
         // If logged in but not fully onboarded, send to questions
-        return NextResponse.redirect(new URL('/onboarding/questions', request.url));
+        const redirectUrl = new URL('/onboarding/questions', request.url);
+        return NextResponse.redirect(redirectUrl);
       } else {
         // If not logged in at all, start from beginning
-        return NextResponse.redirect(new URL('/onboarding', request.url));
+        const redirectUrl = new URL('/onboarding', request.url);
+        return NextResponse.redirect(redirectUrl);
       }
     }
   }
@@ -40,14 +60,15 @@ export function middleware(request) {
   if (path.startsWith('/onboarding')) {
     // Skip login/questions for fully onboarded users and send directly to dashboard
     if (isFullyOnboarded && (path === '/onboarding' || path === '/onboarding/login' || path === '/onboarding/questions')) {
-      return NextResponse.redirect(new URL('/daksh', request.url));
+      const redirectUrl = new URL('/daksh', request.url);
+      return NextResponse.redirect(redirectUrl);
     }
 
     // Special handling for questions page - require login
     if (path === '/onboarding/questions') {
-      const loginCompleted = request.cookies.get('loginCompleted')?.value === 'true';
-      if (!loginCompleted) {
-        return NextResponse.redirect(new URL('/onboarding/login', request.url));
+      if (!hasLoginCompleted) {
+        const redirectUrl = new URL('/onboarding/login', request.url);
+        return NextResponse.redirect(redirectUrl);
       }
     }
   }
@@ -60,12 +81,13 @@ export function middleware(request) {
 
     if (!authCookie) {
       // Redirect to dashboard login instead of redirecting students here
-      return NextResponse.redirect(new URL('/dashboard/login', request.url));
+      const redirectUrl = new URL('/dashboard/login', request.url);
+      return NextResponse.redirect(redirectUrl);
     }
   }
 
   // Pass through all other requests
-  return NextResponse.next();
+  return response;
 }
 
 // Apply the middleware to these paths

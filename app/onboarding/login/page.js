@@ -90,48 +90,63 @@ export default function StudentLogin() {
     if (hasCompletedOnboarding) {
       // User has already completed questions, mark as onboarded
       localStorage.setItem('onboarded', 'true');
+      // Set cookie with HTTP only false to ensure it's accessible to middleware
       setCookie('onboarded', 'true', {
         maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/'
+        path: '/',
+        sameSite: 'strict',
+        httpOnly: false
       });
 
-      toast.success('Welcome back!');
+      // Set loginCompleted cookie as well for redundancy
+      setCookie('loginCompleted', 'true', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/',
+        sameSite: 'strict',
+        httpOnly: false
+      });
 
-      // Immediate redirect attempt for faster navigation
-      try {
-        // Force direct navigation - more reliable than router.push for cross-page navigation
-        window.location.href = '/daksh';
-      } catch (err) {
-        console.error('Navigation error:', err);
-        // Fallback with timeout
-        redirectTimeoutRef.current = setTimeout(() => {
-          window.location.href = '/daksh';
-        }, 100);
-      }
+      toast.success('Welcome back!', { duration: 1500 });
+
+      // Force synchronous cookie setting before redirect
+      document.cookie = `onboarded=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
+
+      // Small delay to ensure cookies are set
+      setTimeout(() => {
+        // Force hard refresh to ensure middleware catches the new cookies
+        window.location.replace('/daksh');
+      }, 300);
     } else {
       // User has not completed onboarding, redirect to questions
       localStorage.setItem('loginCompleted', 'true');
       localStorage.setItem('onboardingStep', 'questions');
 
-      // Set cookie for middleware
+      // Set cookies with HTTP only false to ensure they're accessible to middleware
       setCookie('onboarded', 'false', {
         maxAge: 30 * 24 * 60 * 60, // 30 days
-        path: '/'
+        path: '/',
+        sameSite: 'strict',
+        httpOnly: false
       });
 
-      toast.success('Login successful!');
+      setCookie('loginCompleted', 'true', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/',
+        sameSite: 'strict',
+        httpOnly: false
+      });
 
-      // Immediate redirect attempt
-      try {
-        // Force direct navigation - more reliable than router.push
-        window.location.href = '/onboarding/questions';
-      } catch (err) {
-        console.error('Navigation error:', err);
-        // Fallback with timeout
-        redirectTimeoutRef.current = setTimeout(() => {
-          window.location.href = '/onboarding/questions';
-        }, 100);
-      }
+      toast.success('Login successful!', { duration: 1500 });
+
+      // Force synchronous cookie setting before redirect
+      document.cookie = `loginCompleted=true;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
+      document.cookie = `onboarded=false;path=/;max-age=${30 * 24 * 60 * 60};samesite=strict`;
+
+      // Small delay to ensure cookies are set
+      setTimeout(() => {
+        // Force hard refresh to ensure middleware catches the new cookies
+        window.location.replace('/onboarding/questions');
+      }, 300);
     }
   };
 
