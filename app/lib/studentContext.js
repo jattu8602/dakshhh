@@ -14,6 +14,8 @@ export function StudentProvider({ children }) {
   const [error, setError] = useState(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [currentOnboardingStep, setCurrentOnboardingStep] = useState(null);
+  const [matchingStudents, setMatchingStudents] = useState([]);
+  const [multipleMatches, setMultipleMatches] = useState(false);
 
   useEffect(() => {
     // Check if student info is in localStorage
@@ -53,6 +55,48 @@ export function StudentProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Set student and handle onboarding status
+  const setStudentAndHandleOnboarding = (selectedStudent) => {
+    setStudent(selectedStudent);
+    localStorage.setItem('student', JSON.stringify(selectedStudent));
+    localStorage.setItem('loginCompleted', 'true');
+
+    // Only set onboarded to true if the student has completed the full process
+    if (selectedStudent.preferences) {
+      localStorage.setItem('onboarded', 'true');
+      setOnboardingComplete(true);
+      // Set onboarded cookie for middleware
+      setCookie('onboarded', 'true', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/'
+      });
+    } else {
+      // Student logged in but hasn't completed the questions
+      localStorage.setItem('onboardingStep', 'questions');
+      setCurrentOnboardingStep('questions');
+      // Set cookie explicitly to false
+      setCookie('onboarded', 'false', {
+        maxAge: 30 * 24 * 60 * 60, // 30 days
+        path: '/'
+      });
+    }
+
+    // Clear multiple matches state
+    setMatchingStudents([]);
+    setMultipleMatches(false);
+
+    return { success: true, student: selectedStudent };
+  };
+
+  // Select a specific student from multiple matches
+  const selectStudent = (studentIndex) => {
+    if (studentIndex >= 0 && studentIndex < matchingStudents.length) {
+      const selectedStudent = matchingStudents[studentIndex];
+      return setStudentAndHandleOnboarding(selectedStudent);
+    }
+    return { success: false, error: 'Invalid student selection' };
+  };
+
   // Login with username/password
   const login = async (username, password) => {
     setError(null);
@@ -62,32 +106,15 @@ export function StudentProvider({ children }) {
       const result = await authenticateStudent(username, password);
 
       if (result.authenticated) {
-        setStudent(result.student);
-        // Store student info in localStorage
-        localStorage.setItem('student', JSON.stringify(result.student));
-        localStorage.setItem('loginCompleted', 'true');
-
-        // Only set onboarded to true if the student has completed the full process
-        if (result.student.preferences) {
-          localStorage.setItem('onboarded', 'true');
-          setOnboardingComplete(true);
-          // Set onboarded cookie for middleware
-          setCookie('onboarded', 'true', {
-            maxAge: 30 * 24 * 60 * 60, // 30 days
-            path: '/'
-          });
+        if (result.multipleMatches) {
+          // Multiple students found, store them and let user choose
+          setMatchingStudents(result.students);
+          setMultipleMatches(true);
+          return { success: true, multipleMatches: true, students: result.students };
         } else {
-          // Student logged in but hasn't completed the questions
-          localStorage.setItem('onboardingStep', 'questions');
-          setCurrentOnboardingStep('questions');
-          // Set cookie explicitly to false
-          setCookie('onboarded', 'false', {
-            maxAge: 30 * 24 * 60 * 60, // 30 days
-            path: '/'
-          });
+          // Single student found
+          return setStudentAndHandleOnboarding(result.students[0]);
         }
-
-        return { success: true, student: result.student };
       } else {
         throw new Error('Invalid username or password');
       }
@@ -108,32 +135,15 @@ export function StudentProvider({ children }) {
       const result = await authenticateStudentByQR(qrData);
 
       if (result.authenticated) {
-        setStudent(result.student);
-        // Store student info in localStorage
-        localStorage.setItem('student', JSON.stringify(result.student));
-        localStorage.setItem('loginCompleted', 'true');
-
-        // Only set onboarded to true if the student has completed the full process
-        if (result.student.preferences) {
-          localStorage.setItem('onboarded', 'true');
-          setOnboardingComplete(true);
-          // Set onboarded cookie for middleware
-          setCookie('onboarded', 'true', {
-            maxAge: 30 * 24 * 60 * 60, // 30 days
-            path: '/'
-          });
+        if (result.multipleMatches) {
+          // Multiple students found, store them and let user choose
+          setMatchingStudents(result.students);
+          setMultipleMatches(true);
+          return { success: true, multipleMatches: true, students: result.students };
         } else {
-          // Student logged in but hasn't completed the questions
-          localStorage.setItem('onboardingStep', 'questions');
-          setCurrentOnboardingStep('questions');
-          // Set cookie explicitly to false
-          setCookie('onboarded', 'false', {
-            maxAge: 30 * 24 * 60 * 60, // 30 days
-            path: '/'
-          });
+          // Single student found
+          return setStudentAndHandleOnboarding(result.students[0]);
         }
-
-        return { success: true, student: result.student };
       } else {
         throw new Error('Invalid QR code');
       }
@@ -150,6 +160,8 @@ export function StudentProvider({ children }) {
     setStudent(null);
     setOnboardingComplete(false);
     setCurrentOnboardingStep(null);
+    setMatchingStudents([]);
+    setMultipleMatches(false);
     localStorage.removeItem('student');
     localStorage.removeItem('onboarded');
     localStorage.removeItem('loginCompleted');
@@ -199,7 +211,10 @@ export function StudentProvider({ children }) {
         hasCompletedQuestions,
         onboardingComplete,
         currentOnboardingStep,
-        completeOnboarding
+        completeOnboarding,
+        matchingStudents,
+        multipleMatches,
+        selectStudent
       }}
     >
       {children}

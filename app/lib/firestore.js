@@ -174,14 +174,17 @@ export const authenticateStudent = async (username, password) => {
   try {
     // We need to search through all schools and classes to find the student
     const schoolsSnapshot = await getDocs(schoolsCollection);
+    const matchingStudents = [];
 
     for (const schoolDoc of schoolsSnapshot.docs) {
       const schoolId = schoolDoc.id;
+      const schoolData = schoolDoc.data();
       const classesCollection = collection(db, 'schools', schoolId, 'classes');
       const classesSnapshot = await getDocs(classesCollection);
 
       for (const classDoc of classesSnapshot.docs) {
         const classId = classDoc.id;
+        const classData = classDoc.data();
         const studentsCollection = collection(db, 'schools', schoolId, 'classes', classId, 'students');
 
         // Query for student with matching username
@@ -189,22 +192,30 @@ export const authenticateStudent = async (username, password) => {
         const studentSnapshot = await getDocs(q);
 
         if (!studentSnapshot.empty) {
-          const studentDoc = studentSnapshot.docs[0];
-          const studentData = { id: studentDoc.id, ...studentDoc.data() };
+          for (const studentDoc of studentSnapshot.docs) {
+            const studentData = { id: studentDoc.id, ...studentDoc.data() };
 
-          // Check if password matches (in a real app, you'd compare hashed passwords)
-          if (studentData.password === password) {
-            return {
-              authenticated: true,
-              student: {
+            // Check if password matches (in a real app, you'd compare hashed passwords)
+            if (studentData.password === password) {
+              matchingStudents.push({
                 ...studentData,
                 schoolId,
-                classId
-              }
-            };
+                schoolName: schoolData.name,
+                classId,
+                className: classData.name
+              });
+            }
           }
         }
       }
+    }
+
+    if (matchingStudents.length > 0) {
+      return {
+        authenticated: true,
+        students: matchingStudents,
+        multipleMatches: matchingStudents.length > 1
+      };
     }
 
     // No matching student found

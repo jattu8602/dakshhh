@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 
 export default function StudentLogin() {
   const router = useRouter();
-  const { login, loginWithQR, error: authError, loading: authLoading } = useStudent();
+  const { login, loginWithQR, selectStudent, matchingStudents, multipleMatches, error: authError, loading: authLoading } = useStudent();
   const [loginMethod, setLoginMethod] = useState('credentials'); // 'credentials' or 'qr'
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -117,6 +117,32 @@ export default function StudentLogin() {
           window.location.href = '/onboarding/questions';
         }
       }, 750);
+    }
+  };
+
+  // Handle student selection from multiple matches
+  const handleStudentSelection = async (index) => {
+    if (isNavigating) return;
+
+    try {
+      setLoading(true);
+      setError('');
+
+      const result = await selectStudent(index);
+
+      if (result.success) {
+        // Handle successful login with the selected student
+        handleSuccessfulLogin(result.student);
+      } else {
+        setError(result.error || 'Selection failed');
+        toast.error(result.error || 'Selection failed');
+      }
+    } catch (err) {
+      console.error('Selection error:', err);
+      setError('Failed to select student');
+      toast.error('Failed to select student');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -283,11 +309,16 @@ export default function StudentLogin() {
       const result = await loginWithQR(qrData);
 
       if (result.success) {
-        // Keep the navigating flag set to prevent additional toasts
-        setIsNavigating(true);
-
-        // Handle successful login with the user's data
-        handleSuccessfulLogin(result.student);
+        if (result.multipleMatches) {
+          // Multiple students found, let user select one
+          setIsNavigating(false);
+          toast.success('Multiple accounts found. Please select one.');
+        } else {
+          // Keep the navigating flag set to prevent additional toasts
+          setIsNavigating(true);
+          // Handle successful login with the user's data
+          handleSuccessfulLogin(result.student);
+        }
       } else {
         setError(result.error || 'QR authentication failed');
         toast.error(result.error || 'QR authentication failed');
@@ -333,11 +364,16 @@ export default function StudentLogin() {
       const result = await login(username, password);
 
       if (result.success) {
-        // Set navigating flag to prevent additional toasts
-        setIsNavigating(true);
-
-        // Handle successful login with the user's data
-        handleSuccessfulLogin(result.student);
+        if (result.multipleMatches) {
+          // Multiple students found, let user select one
+          setIsNavigating(false);
+          toast.success('Multiple accounts found. Please select one.');
+        } else {
+          // Set navigating flag to prevent additional toasts
+          setIsNavigating(true);
+          // Handle successful login with the user's data
+          handleSuccessfulLogin(result.student);
+        }
       } else {
         setError(result.error || 'Authentication failed');
         toast.error(result.error || 'Authentication failed');
@@ -370,34 +406,6 @@ export default function StudentLogin() {
             Student Login
           </h2>
 
-          {/* Toggle between login methods */}
-          <div className="flex rounded-md shadow-sm">
-            <button
-              type="button"
-              onClick={() => toggleLoginMethod()}
-              disabled={isNavigating || loading}
-              className={`w-1/2 py-2 px-4 text-sm font-medium rounded-l-md ${
-                loginMethod === 'credentials'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300'
-              } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              Username & Password
-            </button>
-            <button
-              type="button"
-              onClick={() => toggleLoginMethod()}
-              disabled={isNavigating || loading}
-              className={`w-1/2 py-2 px-4 text-sm font-medium rounded-r-md ${
-                loginMethod === 'qr'
-                  ? 'bg-indigo-600 text-white'
-                  : 'bg-white text-gray-700 border border-gray-300'
-              } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              Scan QR Code
-            </button>
-          </div>
-
           {/* Error message */}
           {error && (
             <div className="bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
@@ -405,90 +413,151 @@ export default function StudentLogin() {
             </div>
           )}
 
-          {/* Username & Password Login Form */}
-          {loginMethod === 'credentials' && (
-            <form className="mt-8 space-y-6" onSubmit={handleCredentialLogin}>
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="username" className="block text-sm font-medium text-gray-700">
-                    Username
-                  </label>
-                  <input
-                    id="username"
-                    name="username"
-                    type="text"
-                    autoComplete="username"
-                    required
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    disabled={isNavigating || loading}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    required
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={isNavigating || loading}
-                    className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-                  />
-                </div>
+          {/* Student Selection UI */}
+          {multipleMatches && matchingStudents.length > 0 ? (
+            <div className="mt-8 space-y-6">
+              <div className="text-center text-sm font-medium text-gray-700">
+                Multiple accounts found with these credentials.
+                Please select your account:
               </div>
 
-              <div>
-                <button
-                  type="submit"
-                  disabled={loading || isNavigating}
-                  className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-                >
-                  {loading ? (
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  ) : 'Sign in'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* QR Code Scanner */}
-          {loginMethod === 'qr' && (
-            <div className="mt-8" ref={qrContainerRef}>
-              <div className="mb-4 text-center text-sm text-gray-500">
-                Scan the QR code provided by your teacher
-              </div>
-              <div className="overflow-hidden rounded-lg bg-gray-100 aspect-square relative">
-                {loading ? (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70">
-                    <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                  </div>
-                ) : (
-                  <>
-                    <div id="qr-reader" className="w-full h-full"></div>
-                    <div className="absolute inset-0 pointer-events-none">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-64 h-64 border-2 border-white rounded-lg"></div>
-                      </div>
+              <div className="space-y-3">
+                {matchingStudents.map((student, index) => (
+                  <button
+                    key={student.id}
+                    onClick={() => handleStudentSelection(index)}
+                    disabled={loading || isNavigating}
+                    className="w-full flex justify-between items-center px-4 py-3 border rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+                  >
+                    <div className="flex flex-col items-start">
+                      <span className="font-bold">{student.name}</span>
+                      <span className="text-xs text-gray-500">
+                        Class: {student.className} | Roll: {student.rollNumber}
+                      </span>
                     </div>
-                  </>
-                )}
-              </div>
-              <div className="mt-4 text-xs text-center text-gray-500">
-                Make sure the QR code is within the scanning area and well-lit
+                    <div className="text-xs text-gray-500">
+                      {student.schoolName}
+                    </div>
+                  </button>
+                ))}
               </div>
             </div>
+          ) : (
+            <>
+              {/* Toggle between login methods */}
+              <div className="flex rounded-md shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => toggleLoginMethod()}
+                  disabled={isNavigating || loading}
+                  className={`w-1/2 py-2 px-4 text-sm font-medium rounded-l-md ${
+                    loginMethod === 'credentials'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300'
+                  } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Username & Password
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleLoginMethod()}
+                  disabled={isNavigating || loading}
+                  className={`w-1/2 py-2 px-4 text-sm font-medium rounded-r-md ${
+                    loginMethod === 'qr'
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-white text-gray-700 border border-gray-300'
+                  } ${(isNavigating || loading) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                >
+                  Scan QR Code
+                </button>
+              </div>
+
+              {/* Username & Password Login Form */}
+              {loginMethod === 'credentials' && (
+                <form className="mt-8 space-y-6" onSubmit={handleCredentialLogin}>
+                  <div className="space-y-4">
+                    <div>
+                      <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+                        Username
+                      </label>
+                      <input
+                        id="username"
+                        name="username"
+                        type="text"
+                        autoComplete="username"
+                        required
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        disabled={isNavigating || loading}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                        Password
+                      </label>
+                      <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={isNavigating || loading}
+                        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <button
+                      type="submit"
+                      disabled={loading || isNavigating}
+                      className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      ) : 'Sign in'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* QR Code Scanner */}
+              {loginMethod === 'qr' && (
+                <div className="mt-8" ref={qrContainerRef}>
+                  <div className="mb-4 text-center text-sm text-gray-500">
+                    Scan the QR code provided by your teacher
+                  </div>
+                  <div className="overflow-hidden rounded-lg bg-gray-100 aspect-square relative">
+                    {loading ? (
+                      <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70">
+                        <svg className="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                      </div>
+                    ) : (
+                      <>
+                        <div id="qr-reader" className="w-full h-full"></div>
+                        <div className="absolute inset-0 pointer-events-none">
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="w-64 h-64 border-2 border-white rounded-lg"></div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <div className="mt-4 text-xs text-center text-gray-500">
+                    Make sure the QR code is within the scanning area and well-lit
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
