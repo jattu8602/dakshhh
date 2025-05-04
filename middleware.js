@@ -30,7 +30,77 @@ export function middleware(request) {
   response.headers.set('x-middleware-debug', debugInfo);
   console.log(`[Middleware] ${debugInfo}`);
 
-  // HIGHEST PRIORITY: Check for personalized paths first
+  // PRIORITY 1: Check most frequently used paths first for quick resolution
+
+  // Handle direct access to / - root path
+  if (path === '/') {
+    // If user is logged in, redirect straight to personalized URL if possible
+    if (hasLoginCompleted) {
+      // Try to get student data from cookies
+      const studentDataCookie = request.cookies.get('studentData');
+      if (studentDataCookie) {
+        try {
+          const studentData = JSON.parse(decodeURIComponent(studentDataCookie.value));
+          if (studentData.schoolId && studentData.classId && studentData.id) {
+            console.log('[Middleware] Redirecting / directly to personalized URL');
+            const personalizedUrl = `/daksh/${studentData.schoolId}/${studentData.classId}/${studentData.id}`;
+            const redirectResponse = NextResponse.redirect(new URL(personalizedUrl, request.url));
+            redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+            return redirectResponse;
+          }
+        } catch (e) {
+          console.warn('[Middleware] Failed to parse student data cookie in root path:', e);
+        }
+      }
+
+      // Fallback to /daksh if we can't determine personalized URL
+      console.log('[Middleware] Redirecting / to /daksh (logged in)');
+      const redirectResponse = NextResponse.redirect(new URL('/daksh', request.url));
+      redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+      return redirectResponse;
+    } else {
+      // Not logged in, go to onboarding
+      console.log('[Middleware] Redirecting / to /onboarding (not logged in)');
+      const redirectResponse = NextResponse.redirect(new URL('/onboarding', request.url));
+      redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+      return redirectResponse;
+    }
+  }
+
+  // PRIORITY 2: Handle /daksh path quickly - most common path needing optimization
+  // Handle direct access to /daksh
+  if (path === '/daksh') {
+    // Not logged in - redirect to onboarding immediately
+    if (!hasLoginCompleted) {
+      console.log('[Middleware] Redirecting /daksh to /onboarding (not logged in)');
+      const redirectResponse = NextResponse.redirect(new URL('/onboarding', request.url));
+      redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+      return redirectResponse;
+    }
+
+    // Logged in - try to redirect to personalized URL directly from middleware
+    const studentDataCookie = request.cookies.get('studentData');
+    if (studentDataCookie) {
+      try {
+        const studentData = JSON.parse(decodeURIComponent(studentDataCookie.value));
+        if (studentData.schoolId && studentData.classId && studentData.id) {
+          console.log('[Middleware] Redirecting /daksh directly to personalized URL');
+          const personalizedUrl = `/daksh/${studentData.schoolId}/${studentData.classId}/${studentData.id}`;
+          const redirectResponse = NextResponse.redirect(new URL(personalizedUrl, request.url));
+          redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+          return redirectResponse;
+        }
+      } catch (e) {
+        console.warn('[Middleware] Failed to parse student data cookie:', e);
+      }
+    }
+
+    // Allow access to generic dashboard for client-side redirection if needed
+    console.log('[Middleware] Allowing access to generic /daksh (will handle redirection client-side)');
+    return response;
+  }
+
+  // PRIORITY 3: Handle personalized paths
   // Format: /daksh/[schoolId]/[classId]/[studentId]
   const isPersonalizedDashboardPath = /^\/daksh\/[\w-]+\/[\w-]+\/[\w-]+/.test(path);
 
@@ -59,25 +129,47 @@ export function middleware(request) {
 
       return response;
     } else {
-      // Allow access to personalized dashboard even without login cookie
-      // This is important for direct URL access cases
-      console.log('[Middleware] Allowing access to personalized dashboard without login cookie');
-      const enhancedResponse = NextResponse.next();
-
-      // Set both cookies for full access
-      enhancedResponse.cookies.set('onboarded', 'true', {
-        maxAge: 30 * 24 * 60 * 60,
-        path: '/',
-        sameSite: 'lax'
-      });
-      enhancedResponse.cookies.set('loginCompleted', 'true', {
-        maxAge: 30 * 24 * 60 * 60,
-        path: '/',
-        sameSite: 'lax'
-      });
-
-      return enhancedResponse;
+      // Redirect to login if directly accessing personalized URL without being logged in
+      console.log('[Middleware] Redirecting unauthorized personalized path to login');
+      const redirectResponse = NextResponse.redirect(new URL('/onboarding/login', request.url));
+      redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+      return redirectResponse;
     }
+  }
+
+  // PRIORITY 4: Handle onboarding paths
+  // Skip onboarding for already onboarded users - redirect them to personalized dashboard if possible
+  if (hasLoginCompleted && (path === '/onboarding' || path === '/onboarding/login' || path === '/onboarding/questions')) {
+    // Try to get student data from cookies
+    const studentDataCookie = request.cookies.get('studentData');
+    if (studentDataCookie) {
+      try {
+        const studentData = JSON.parse(decodeURIComponent(studentDataCookie.value));
+        if (studentData.schoolId && studentData.classId && studentData.id) {
+          console.log('[Middleware] Redirecting onboarding path directly to personalized URL');
+          const personalizedUrl = `/daksh/${studentData.schoolId}/${studentData.classId}/${studentData.id}`;
+          const redirectResponse = NextResponse.redirect(new URL(personalizedUrl, request.url));
+          redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+          return redirectResponse;
+        }
+      } catch (e) {
+        console.warn('[Middleware] Failed to parse student data cookie in onboarding path:', e);
+      }
+    }
+
+    // Fallback to generic dashboard
+    console.log('[Middleware] Redirecting /onboarding* to /daksh (already onboarded)');
+    const redirectResponse = NextResponse.redirect(new URL('/daksh', request.url));
+    redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+    return redirectResponse;
+  }
+
+  // Protect questions page - require login
+  if (path === '/onboarding/questions' && !hasLoginCompleted) {
+    console.log('[Middleware] Redirecting /onboarding/questions to /onboarding/login (not logged in)');
+    const redirectResponse = NextResponse.redirect(new URL('/onboarding/login', request.url));
+    redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
+    return redirectResponse;
   }
 
   // Format: /onboarding/questions/[schoolId]/[classId]/[studentId]
@@ -96,48 +188,16 @@ export function middleware(request) {
     }
   }
 
-  // CRITICAL: Allow /daksh access if login cookie exists
-  // This is the most important rule to prevent redirect loops
-  if (path.startsWith('/daksh') && hasLoginCompleted) {
-    console.log('[Middleware] Allowing /daksh access due to login cookie presence');
-    return response;
-  }
-
-  // SIMPLIFIED REDIRECT LOGIC
-  // Root path handling
-  if (path === '/') {
-    const redirectUrl = isFullyOnboarded ? '/daksh' : '/onboarding';
-    console.log(`[Middleware] Redirecting / to ${redirectUrl}`);
-    const redirectResponse = NextResponse.redirect(new URL(redirectUrl, request.url));
-    redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
-    return redirectResponse;
-  }
-
-  // Protect /daksh routes - redirect to onboarding if not logged in
+  // PRIORITY 5: Handle other daksh routes
+  // Catch-all for other /daksh routes - redirect to onboarding if not logged in
   if (path.startsWith('/daksh') && !hasLoginCompleted) {
-    console.log('[Middleware] Redirecting /daksh to /onboarding (not logged in)');
+    console.log('[Middleware] Redirecting /daksh/* to /onboarding (not logged in)');
     const redirectResponse = NextResponse.redirect(new URL('/onboarding', request.url));
     redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
     return redirectResponse;
   }
 
-  // Skip onboarding for already onboarded users - DON'T redirect from personalized routes
-  if (isFullyOnboarded && (path === '/onboarding' || path === '/onboarding/login' || path === '/onboarding/questions')) {
-    console.log('[Middleware] Redirecting /onboarding* to /daksh (fully onboarded)');
-    const redirectResponse = NextResponse.redirect(new URL('/daksh', request.url));
-    redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
-    return redirectResponse;
-  }
-
-  // Protect questions page - require login
-  if (path === '/onboarding/questions' && !hasLoginCompleted) {
-    console.log('[Middleware] Redirecting /onboarding/questions to /onboarding/login (not logged in)');
-    const redirectResponse = NextResponse.redirect(new URL('/onboarding/login', request.url));
-    redirectResponse.headers.set('x-redirect-count', (redirectCount + 1).toString());
-    return redirectResponse;
-  }
-
-  // Dashboard admin protection
+  // PRIORITY 6: Admin dashboard protection
   if (path.startsWith('/dashboard') && path !== '/dashboard/login') {
     const authCookie = request.cookies.get('next-auth.session-token') ||
                        request.cookies.get('__Secure-next-auth.session-token');

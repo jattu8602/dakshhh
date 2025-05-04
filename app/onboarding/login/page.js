@@ -215,6 +215,23 @@ export default function StudentLogin() {
             httpOnly: false
           });
 
+          // Store minimal student data in cookie for middleware optimization
+          if (student && student.schoolId && student.classId && student.id) {
+            const minimalStudentData = {
+              id: student.id,
+              schoolId: student.schoolId,
+              classId: student.classId
+            };
+
+            // Set cookie with student data for middleware to use
+            setCookie('studentData', JSON.stringify(minimalStudentData), {
+              maxAge: 30 * 24 * 60 * 60,
+              path: '/',
+              sameSite: 'lax',
+              httpOnly: false
+            });
+          }
+
           // Verify cookies were set - log warning if not
           setTimeout(() => {
             const hasLoginCookie = document.cookie.includes('loginCompleted=true');

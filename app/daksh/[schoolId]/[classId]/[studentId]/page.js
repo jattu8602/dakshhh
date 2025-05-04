@@ -19,6 +19,10 @@ export default function PersonalizedDashboard() {
     router.push('/onboarding');
   };
 
+  const handleProfileClick = () => {
+    router.push(`/daksh/${params.schoolId}/${params.classId}/${params.studentId}/profile`);
+  };
+
   // Handle cookie verification on page load
   useEffect(() => {
     // Check cookies to ensure they're set properly for this page
@@ -255,19 +259,28 @@ export default function PersonalizedDashboard() {
           </svg>
           <span className="text-xs mt-1">Home</span>
         </button>
-        <button className="flex flex-col items-center justify-center w-20 text-gray-500">
+        <button
+          onClick={() => router.push(`/daksh/${params.schoolId}/${params.classId}/${params.studentId}/courses`)}
+          className="flex flex-col items-center justify-center w-20 text-gray-500"
+        >
           <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
             <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z"></path>
           </svg>
           <span className="text-xs mt-1">Courses</span>
         </button>
-        <button className="flex flex-col items-center justify-center w-20 text-gray-500">
+        <button
+          onClick={() => router.push(`/daksh/${params.schoolId}/${params.classId}/${params.studentId}/help`)}
+          className="flex flex-col items-center justify-center w-20 text-gray-500"
+        >
           <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd"></path>
           </svg>
           <span className="text-xs mt-1">Help</span>
         </button>
-        <button className="flex flex-col items-center justify-center w-20 text-gray-500">
+        <button
+          onClick={() => router.push(`/daksh/${params.schoolId}/${params.classId}/${params.studentId}/profile`)}
+          className="flex flex-col items-center justify-center w-20 text-gray-500"
+        >
           <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
             <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-6-3a2 2 0 11-4 0 2 2 0 014 0zm-2 4a5 5 0 00-4.546 2.916A5.986 5.986 0 0010 16a5.986 5.986 0 004.546-2.084A5 5 0 0010 11z" clipRule="evenodd"></path>
           </svg>

@@ -75,6 +75,19 @@ export default function DakshLayout({ children }) {
 
       // If we're in /daksh but should be in a personalized URL, redirect to it
       if (pathname === '/daksh' && student && student.schoolId && student.classId && student.id) {
+        console.log('Layout: Redirecting from generic /daksh to personalized dashboard URL');
+
+        // Store minimal student data in cookie for middleware optimization
+        const minimalStudentData = {
+          id: student.id,
+          schoolId: student.schoolId,
+          classId: student.classId
+        };
+
+        // Set cookie with student data for future middleware redirects
+        document.cookie = `studentData=${encodeURIComponent(JSON.stringify(minimalStudentData))};path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
+
+        // Redirect to personalized URL
         router.push(`/daksh/${student.schoolId}/${student.classId}/${student.id}`);
         return;
       }
