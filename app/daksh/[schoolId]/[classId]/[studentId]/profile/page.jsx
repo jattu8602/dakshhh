@@ -3,20 +3,27 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useStudent } from '../../../../../lib/studentContext';
-import { getStudentById } from '../../../../../lib/firestore';
 import toast from 'react-hot-toast';
 
 export default function ProfilePage() {
   const router = useRouter();
   const params = useParams();
-  const { student: contextStudent, isAuthenticated, loading: studentLoading, logout } = useStudent();
+  const { getStudentData, loading: studentLoading, logout } = useStudent();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Handle logout
   const handleLogout = () => {
+    // First logout from context
     logout();
-    router.push('/onboarding');
+
+    // Ensure cookies are cleared from the document as well for immediate effect
+    document.cookie = 'loginCompleted=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    document.cookie = 'onboarded=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+    document.cookie = 'studentData=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+
+    // Then redirect to login page
+    router.push('/onboarding/login');
   };
 
   // Handle navigation back to dashboard
@@ -44,40 +51,23 @@ export default function ProfilePage() {
     }
   }, []);
 
-  // Fetch student data using route parameters
+  // Fetch student data using the efficient context method
   useEffect(() => {
     async function loadStudentData() {
       if (params.schoolId && params.classId && params.studentId) {
         try {
-          // First try to use context student if the IDs match
-          if (
-            contextStudent &&
-            contextStudent.schoolId === params.schoolId &&
-            contextStudent.classId === params.classId &&
-            contextStudent.id === params.studentId
-          ) {
-            setStudent(contextStudent);
-            setLoading(false);
-            return;
-          }
-
-          // Otherwise fetch from Firestore directly
-          const studentData = await getStudentById(
+          const studentData = await getStudentData(
             params.schoolId,
             params.classId,
             params.studentId
           );
 
           if (studentData) {
-            setStudent({
-              ...studentData,
-              schoolId: params.schoolId,
-              classId: params.classId
-            });
+            setStudent(studentData);
           } else {
-            // If student not found, redirect to generic dashboard
+            // If student not found, redirect to login
             toast.error('Student data not found');
-            router.push('/daksh');
+            router.push('/onboarding/login');
           }
         } catch (error) {
           console.error('Error loading student data:', error);
@@ -86,15 +76,15 @@ export default function ProfilePage() {
           setLoading(false);
         }
       } else {
-        // Missing parameters, redirect to generic dashboard
-        router.push('/daksh');
+        // Missing parameters, redirect to login
+        router.push('/onboarding/login');
       }
     }
 
     if (!studentLoading) {
       loadStudentData();
     }
-  }, [params, contextStudent, studentLoading, router]);
+  }, [params, getStudentData, studentLoading, router]);
 
   if (loading || !student) {
     return (

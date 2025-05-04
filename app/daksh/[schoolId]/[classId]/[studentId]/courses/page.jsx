@@ -9,7 +9,7 @@ import toast from 'react-hot-toast';
 export default function CoursesPage() {
   const router = useRouter();
   const params = useParams();
-  const { student: contextStudent, isAuthenticated, loading: studentLoading } = useStudent();
+  const { getStudentData, loading: studentLoading } = useStudent();
   const [student, setStudent] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -78,40 +78,23 @@ export default function CoursesPage() {
     }
   }, []);
 
-  // Fetch student data using route parameters
+  // Fetch student data using the efficient context method
   useEffect(() => {
     async function loadStudentData() {
       if (params.schoolId && params.classId && params.studentId) {
         try {
-          // First try to use context student if the IDs match
-          if (
-            contextStudent &&
-            contextStudent.schoolId === params.schoolId &&
-            contextStudent.classId === params.classId &&
-            contextStudent.id === params.studentId
-          ) {
-            setStudent(contextStudent);
-            setLoading(false);
-            return;
-          }
-
-          // Otherwise fetch from Firestore directly
-          const studentData = await getStudentById(
+          const studentData = await getStudentData(
             params.schoolId,
             params.classId,
             params.studentId
           );
 
           if (studentData) {
-            setStudent({
-              ...studentData,
-              schoolId: params.schoolId,
-              classId: params.classId
-            });
+            setStudent(studentData);
           } else {
-            // If student not found, redirect to generic dashboard
+            // If student not found, redirect to login
             toast.error('Student data not found');
-            router.push('/daksh');
+            router.push('/onboarding/login');
           }
         } catch (error) {
           console.error('Error loading student data:', error);
@@ -120,15 +103,15 @@ export default function CoursesPage() {
           setLoading(false);
         }
       } else {
-        // Missing parameters, redirect to generic dashboard
-        router.push('/daksh');
+        // Missing parameters, redirect to login
+        router.push('/onboarding/login');
       }
     }
 
     if (!studentLoading) {
       loadStudentData();
     }
-  }, [params, contextStudent, studentLoading, router]);
+  }, [params, getStudentData, studentLoading, router]);
 
   if (loading || !student) {
     return (

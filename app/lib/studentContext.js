@@ -1,11 +1,14 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { authenticateStudent, authenticateStudentByQR } from './firestore';
+import { authenticateStudent, authenticateStudentByQR, getStudentById } from './firestore';
 import { setCookie } from 'cookies-next';
 
 // Create student auth context
 const StudentContext = createContext({});
+
+// Cache for storing fetched student data
+const studentCache = new Map();
 
 // Student provider component
 export function StudentProvider({ children }) {
@@ -32,6 +35,12 @@ export function StudentProvider({ children }) {
         const parsedStudent = JSON.parse(storedStudent);
         setStudent(parsedStudent);
 
+        // Add to cache
+        if (parsedStudent.id && parsedStudent.schoolId && parsedStudent.classId) {
+          const cacheKey = `${parsedStudent.schoolId}:${parsedStudent.classId}:${parsedStudent.id}`;
+          studentCache.set(cacheKey, parsedStudent);
+        }
+
         // Set onboarded cookie for middleware only if fully onboarded
         if (isOnboarded) {
           setCookie('onboarded', 'true', {
@@ -55,6 +64,46 @@ export function StudentProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // Get student data efficiently - first from cache, then context, then Firestore
+  const getStudentData = async (schoolId, classId, studentId) => {
+    if (!schoolId || !classId || !studentId) {
+      return null;
+    }
+
+    // First check cache
+    const cacheKey = `${schoolId}:${classId}:${studentId}`;
+    if (studentCache.has(cacheKey)) {
+      return studentCache.get(cacheKey);
+    }
+
+    // Then check if it matches the current student
+    if (student &&
+        student.schoolId === schoolId &&
+        student.classId === classId &&
+        student.id === studentId) {
+      return student;
+    }
+
+    // Finally, fetch from Firestore
+    try {
+      const studentData = await getStudentById(schoolId, classId, studentId);
+      if (studentData) {
+        // Add to cache
+        const enhancedData = {
+          ...studentData,
+          schoolId,
+          classId
+        };
+        studentCache.set(cacheKey, enhancedData);
+        return enhancedData;
+      }
+    } catch (error) {
+      console.error('Error in getStudentData:', error);
+    }
+
+    return null;
+  };
+
   // Set student and handle onboarding status
   const setStudentAndHandleOnboarding = (selectedStudent) => {
     // Clear any previous student data to avoid conflicts
@@ -64,6 +113,12 @@ export function StudentProvider({ children }) {
     setStudent(selectedStudent);
     localStorage.setItem('student', JSON.stringify(selectedStudent));
     localStorage.setItem('loginCompleted', 'true');
+
+    // Add to cache
+    if (selectedStudent.id && selectedStudent.schoolId && selectedStudent.classId) {
+      const cacheKey = `${selectedStudent.schoolId}:${selectedStudent.classId}:${selectedStudent.id}`;
+      studentCache.set(cacheKey, selectedStudent);
+    }
 
     // Only set onboarded to true if the student has completed the full process
     if (selectedStudent.preferences) {
@@ -181,8 +236,13 @@ export function StudentProvider({ children }) {
     localStorage.removeItem('loginCompleted');
     localStorage.removeItem('onboardingStep');
 
-    // Clear onboarded cookie
+    // Clear cookies
     setCookie('onboarded', '', { maxAge: 0, path: '/' });
+    setCookie('loginCompleted', '', { maxAge: 0, path: '/' });
+    setCookie('studentData', '', { maxAge: 0, path: '/' });
+
+    // Clear cache
+    studentCache.clear();
 
     return { success: true };
   };
@@ -200,6 +260,12 @@ export function StudentProvider({ children }) {
       localStorage.removeItem('onboardingStep');
       setOnboardingComplete(true);
       setCurrentOnboardingStep(null);
+
+      // Update cache
+      if (updatedStudent.id && updatedStudent.schoolId && updatedStudent.classId) {
+        const cacheKey = `${updatedStudent.schoolId}:${updatedStudent.classId}:${updatedStudent.id}`;
+        studentCache.set(cacheKey, updatedStudent);
+      }
 
       // Set onboarded cookie to true
       setCookie('onboarded', 'true', {
@@ -230,7 +296,8 @@ export function StudentProvider({ children }) {
         completeOnboarding,
         matchingStudents,
         multipleMatches,
-        selectStudent
+        selectStudent,
+        getStudentData
       }}
     >
       {children}

@@ -22,6 +22,16 @@ export function middleware(request) {
   const isFullyOnboarded = onboardedCookie?.value === 'true' || onboardedCookie?.value === '1';
   const hasLoginCompleted = loginCompletedCookie?.value === 'true' || loginCompletedCookie?.value === '1';
 
+  // Check if this appears to be right after a logout (empty cookie values but cookie exists)
+  const isLogoutState = (onboardedCookie && onboardedCookie.value === '') ||
+                        (loginCompletedCookie && loginCompletedCookie.value === '');
+
+  // If we detect a logout state, let the request through to /onboarding/login without redirect
+  if (isLogoutState && path.startsWith('/onboarding/login')) {
+    console.log('[Middleware] Detected logout state, allowing access to login page');
+    return NextResponse.next();
+  }
+
   // Create a response that we can modify
   const response = NextResponse.next();
 

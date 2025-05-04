@@ -220,7 +220,9 @@ export default function StudentLogin() {
             const minimalStudentData = {
               id: student.id,
               schoolId: student.schoolId,
-              classId: student.classId
+              classId: student.classId,
+              // Add name for display purposes but keep the cookie small
+              name: student.name || ''
             };
 
             // Set cookie with student data for middleware to use
@@ -230,6 +232,9 @@ export default function StudentLogin() {
               sameSite: 'lax',
               httpOnly: false
             });
+
+            // Also set as document cookie for immediate availability
+            document.cookie = `studentData=${encodeURIComponent(JSON.stringify(minimalStudentData))};path=/;max-age=${30 * 24 * 60 * 60};samesite=lax`;
           }
 
           // Verify cookies were set - log warning if not
